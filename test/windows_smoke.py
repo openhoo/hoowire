@@ -84,8 +84,10 @@ if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notm
             raise RuntimeError(f'Windows patcher {command} failed: {detail}')
         return json.loads(process.stdout)
     # Avoid inheriting a developer profile. The probe never authenticates or sends.
-    app_env = dict(os.environ, LOCALAPPDATA=str(root / 'empty-profile'))
-    (root / 'empty-profile').mkdir()
+    app_env = dict(os.environ, LOCALAPPDATA=str(root / 'empty-profile/local'),
+                   APPDATA=str(root / 'empty-profile/roaming'))
+    Path(app_env['LOCALAPPDATA']).mkdir(parents=True)
+    Path(app_env['APPDATA']).mkdir()
     process = None
     try:
         print('Verified vendor executable; checking app-exit deferral and patching.', flush=True)

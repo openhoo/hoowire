@@ -8,6 +8,7 @@ from pathlib import Path
 import plistlib
 import posixpath
 import shutil
+import stat
 import struct
 import subprocess
 
@@ -230,7 +231,17 @@ def build(app, evidence_path=None, node_bin=None):
         if checked.read(path) != expected or checked.node(path)['integrity']['hash'] != sha(expected):
             raise RuntimeError(f'Archive verification failed: {path}')
     archive_path = asar_path(app)
-    archive_path.write_bytes(patched)
+    platform = app_platform(app)
+    original_mode = stat.S_IMODE(archive_path.stat().st_mode)
+    try:
+        # MSI files can carry Windows' read-only attribute into the staged copy.
+        # Restore that attribute after replacing this copy's archive bytes.
+        if platform == 'windows':
+            archive_path.chmod(original_mode | stat.S_IWRITE)
+        archive_path.write_bytes(patched)
+    finally:
+        if platform == 'windows':
+            archive_path.chmod(original_mode)
     if app_platform(app) == 'macos':
         plist_path = app / 'Contents/Info.plist'
         info = plistlib.loads(plist_path.read_bytes())

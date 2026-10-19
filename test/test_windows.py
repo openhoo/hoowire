@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import stat
 import struct
 import subprocess
 import sys
@@ -59,6 +60,16 @@ class WindowsTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'embedded ASAR integrity'):
             build.build(self.app, self.root / 'build.json')
         self.assertEqual(before, {p.relative_to(self.app): p.read_bytes() for p in self.app.rglob('*') if p.is_file()})
+
+    def test_read_only_vendor_archive_can_be_patched_and_retains_attribute(self):
+        archive = build.asar_path(self.app)
+        archive.chmod(stat.S_IREAD)
+        try:
+            build.build(self.app, self.root / 'build.json')
+            self.assertEqual(build.inspect(self.app)['kind'], 'patched')
+            self.assertFalse(archive.stat().st_mode & stat.S_IWRITE)
+        finally:
+            archive.chmod(stat.S_IREAD | stat.S_IWRITE)
 
     def test_unknown_or_ambiguous_fuse_wire_is_rejected(self):
         executable = self.app / 'Teamwire.exe'
