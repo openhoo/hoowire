@@ -51,9 +51,14 @@ if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notm
 """, {'path': str(installer)})
     extracted = root / 'vendor'
     installer_log = root / 'msi.log'
+    # MSI's property parser requires TARGETDIR="value with spaces". Python's
+    # list2cmdline would quote the entire property instead, opening MSI help.
+    command = subprocess.list2cmdline(['msiexec.exe', '/a', str(installer), '/qn', '/norestart',
+                                       '/L*v', str(installer_log)])
+    command += ' TARGETDIR="' + str(extracted) + '"'
+    print('Verified official installer; extracting the disposable vendor app.', flush=True)
     try:
-        result = subprocess.run(['msiexec.exe', '/a', str(installer), '/qn', 'TARGETDIR=' + str(extracted),
-                                 '/L*v', str(installer_log)], timeout=300)
+        result = subprocess.run(command, timeout=180)
         if result.returncode not in (0, 3010):
             raise RuntimeError(f'MSI administrative extraction failed: {result.returncode}')
     except (subprocess.TimeoutExpired, RuntimeError):
@@ -73,13 +78,17 @@ if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notm
     patcher_command = [sys.executable, str(ROOT / 'scripts/patcher.py')]
     def cli(command, *args):
         process = subprocess.run(patcher_command + [command, '--state-dir', str(state), *args],
-                                 capture_output=True, encoding='utf-8', check=True)
+                                 capture_output=True, encoding='utf-8')
+        if process.returncode:
+            detail = (process.stdout.strip() or process.stderr.strip()).replace(str(root), '<smoke-root>')
+            raise RuntimeError(f'Windows patcher {command} failed: {detail}')
         return json.loads(process.stdout)
     # Avoid inheriting a developer profile. The probe never authenticates or sends.
     app_env = dict(os.environ, LOCALAPPDATA=str(root / 'empty-profile'))
     (root / 'empty-profile').mkdir()
     process = None
     try:
+        print('Verified vendor executable; checking app-exit deferral and patching.', flush=True)
         enabled = cli('enable', '--app', str(app), '--node', shutil.which('node'))
         if not enabled['enabled']:
             raise RuntimeError('The Windows scheduled task was not enabled.')
@@ -102,6 +111,7 @@ if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notm
         if hashlib.sha256((app / 'Teamwire.exe').read_bytes()).hexdigest() != executable_hash:
             raise RuntimeError('The vendor executable was modified.')
         install.verify(app)
+        print('Verified installed patch; probing the native renderer.', flush=True)
         with socket.socket() as server:
             server.bind(('127.0.0.1', 0))
             port = server.getsockname()[1]
@@ -112,6 +122,7 @@ if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notm
         if native.returncode:
             raise RuntimeError(native.stderr or native.stdout)
         runtime = json.loads(native.stdout)
+        print('Verified native renderer; checking the standalone scheduled runtime.', flush=True)
         stop(process)
         process = None
         # A real scheduler pass must execute the installed standalone runtime.
