@@ -153,7 +153,8 @@ def javascript(operation, source, node_bin=None, source_type='module'):
         raise RuntimeError('Node.js is unavailable; configure an absolute node path.')
     result = subprocess.run([str(node_bin), str(ROOT / 'scripts/transform.cjs')],
                             input=json.dumps({'operation': operation, 'source': source, 'sourceType': source_type}),
-                            encoding='utf-8', capture_output=True, timeout=90)
+                            encoding='utf-8', capture_output=True, timeout=90,
+                            creationflags=windows.process_flags())
     if result.returncode:
         raise RuntimeError('Compatibility check failed: ' + result.stderr.strip())
     return json.loads(result.stdout)

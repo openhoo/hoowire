@@ -16,6 +16,10 @@ $taskPath = '\\OpenHoo\\'
 """
 
 
+def process_flags():
+    return subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+
+
 def powershell(script, payload=None):
     # Values travel as JSON over stdin, never as PowerShell source or shell text.
     prefix = """
@@ -25,8 +29,11 @@ $ErrorActionPreference = 'Stop'
 $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
 """
     result = subprocess.run(
-        ['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', prefix + script],
-        input=json.dumps(payload or {}), encoding='utf-8', capture_output=True, timeout=60)
+        [str(Path(os.environ.get('WINDIR', r'C:\Windows')) /
+             'System32/WindowsPowerShell/v1.0/powershell.exe'),
+         '-NoProfile', '-NonInteractive', '-Command', prefix + script],
+        input=json.dumps(payload or {}), encoding='utf-8', capture_output=True, timeout=60,
+        creationflags=process_flags())
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or 'Windows operation failed.')
     return result.stdout.strip()
@@ -95,7 +102,8 @@ $item = Get-Item -LiteralPath $payload.executable
 
 def ensure_stopped():
     result = subprocess.run(['tasklist.exe', '/FI', 'IMAGENAME eq Teamwire.exe', '/FO', 'CSV', '/NH'],
-                            capture_output=True, text=True, errors='replace', check=True, timeout=30)
+                            capture_output=True, text=True, errors='replace', check=True, timeout=30,
+                            creationflags=process_flags())
     for row in csv.reader(io.StringIO(result.stdout)):
         if row and row[0].casefold() == 'teamwire.exe':
             raise RuntimeError('Quit Teamwire before installing so its profile has only one writer.')
