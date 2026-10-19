@@ -10,8 +10,8 @@ structure, prepares a separate copy, and verifies the installation. macOS copies
 are signed locally; supported Windows executables keep their vendor signature.
 
 **Experimental, unofficial desktop modification.** Verified with Teamwire 5.0.1
-on an Apple Silicon Mac. Windows support targets the official x64 desktop MSI
-and is checked by native Windows CI. Other versions are subject to structural compatibility
+on an Apple Silicon Mac and with the official Windows x64 desktop MSI in native
+Windows CI, including live GIPHY search and selection. Other versions are subject to structural compatibility
 checks; passing those checks is not a promise of future compatibility.
 
 ## Requirements

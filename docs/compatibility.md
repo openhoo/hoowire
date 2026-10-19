@@ -14,11 +14,32 @@ The pinned vendor installer SHA-256 is
 `0ce660fde43034eac59604eee3b63dbac480bc2087b8d729cd9a93b6590271b3`.
 It is fetched only by the opt-in Windows integration job and is not redistributed.
 
-Native Windows qualification is pending the integration CI run. The normal suite
-adds Windows fixture, lock, rollback, crash recovery and signature rejection
-coverage. The real renderer probe uses an empty profile and an isolated file
-callback; it does not qualify authenticated composer use or recipient delivery.
-External GIPHY search/selection results are recorded separately in the CI summary.
+Native Windows integration passed on **October 19, 2026**, in
+[Checks run 39293137867](https://github.com/openhoo/hoowire/actions/runs/39293137867),
+using source commit `767872f`, a Windows Server 2025 x64 runner, Python 3.13,
+Node.js 22, and the official Teamwire 5.0.1 x64 MSI.
+
+| Check | Result |
+| --- | --- |
+| MSI checksum and Teamwire Authenticode publisher | Passed |
+| Wait for Teamwire to close before patching | Passed |
+| Original backup, patch installation and unchanged second pass | Passed |
+| Original executable bytes, signature and fuse values retained | Passed |
+| Real renderer, preload bridge, IPC sender validation and picker dialog | Passed |
+| Live GIPHY results and selection | Passed; produced a 1,938,116-byte `image/gif` File with a `GIF89a` signature |
+| Registered per-user task, manually triggered standalone runtime | Passed |
+| Restore of the original vendor archive | Passed; original ASAR hash recovered |
+| Paths containing spaces and Unicode | Passed |
+
+The same run passed 11 Node tests and 24 Python tests on Windows. macOS passed
+the same suite with two Windows-only tests skipped. These regressions include
+native locks, rollback, crash recovery, read-only archives and signature rejection.
+
+The real renderer probe uses empty local and roaming profiles and an isolated
+file callback. It does not qualify authenticated Windows composer use, an actual
+login/repetition trigger, Windows 10/11 on a physical PC, or recipient delivery.
+GIPHY availability is reported separately in each integration run because that
+external service can block a network independently of Windows compatibility.
 
 ## Hoowire 1.0.1
 
