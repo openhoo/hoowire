@@ -1,6 +1,6 @@
-# Teamwire GIF Patcher
+# Hoowire
 
-An OpenHoo tool that adds a **GIF button** next to Teamwire's emoji button on
+Hoowire is an OpenHoo tool that adds a **GIF button** next to Teamwire's emoji button on
 macOS. Search GIPHY, browse animated previews, and select a GIF to add it as a
 normal draft attachment. Use Teamwire's **Send** button when ready.
 
@@ -30,12 +30,12 @@ install step. Teamwire binaries, signing keys, and account data are not included
 ## Install
 
 Download and extract an archive from
-[Releases](https://github.com/openhoo/teamwire-gif-patcher/releases), then open a
+[Releases](https://github.com/openhoo/hoowire/releases), then open a
 terminal in the extracted directory. Alternatively:
 
 ```sh
-git clone https://github.com/openhoo/teamwire-gif-patcher.git
-cd teamwire-gif-patcher
+git clone https://github.com/openhoo/hoowire.git
+cd hoowire
 ```
 
 Quit Teamwire, then enable the automatic patcher and apply the first patch:
@@ -68,7 +68,10 @@ adds an attachment to the current draft; it does not send a message.
 
 ## Automatic operation
 
-`enable` installs a standalone runtime and a user LaunchAgent:
+`enable` installs a standalone runtime and a user LaunchAgent.
+
+Hoowire retains the original service identifier and data folder so existing
+installations continue to use the same configuration and backups.
 
 | Item | Location |
 | --- | --- |

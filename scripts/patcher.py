@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Automatically restore the GIF picker after compatible Teamwire updates."""
+"""Hoowire: automatically restore the GIF picker after compatible Teamwire updates."""
 import argparse
 from datetime import datetime
 import fcntl
@@ -18,6 +18,7 @@ import install
 import sign
 
 ROOT = Path(__file__).resolve().parents[1]
+# Keep the original paths and service ID so existing installations retain state.
 SUPPORT = Path.home() / 'Library/Application Support/Teamwire GIF Patcher'
 LABEL = 'eu.openhoo.teamwire-gif-patcher'
 PLIST = Path.home() / 'Library/LaunchAgents' / (LABEL + '.plist')

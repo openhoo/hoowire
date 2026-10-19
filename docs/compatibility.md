@@ -1,5 +1,14 @@
 # Verified scope
 
+## Hoowire 1.0.1
+
+Version 1.0.1 names the project Hoowire and updates its repository links, release
+archive names, notices, and CLI description. The patch recipe and GIF picker are
+unchanged from 1.0.0. Existing service identifiers and data paths are retained so
+installed agents keep using their configuration and backups. The offline suite
+is run for the renamed release; the real-app integration below was performed for
+1.0.0.
+
 ## Initial release: 1.0.0
 
 Local integration was verified on macOS on Apple Silicon with:

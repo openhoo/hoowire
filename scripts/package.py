@@ -47,7 +47,7 @@ def package(output):
     version = files['VERSION'].decode().strip()
     if not re.fullmatch(r'\d+\.\d+\.\d+', version):
         raise RuntimeError('VERSION must contain a numeric semantic version.')
-    prefix = f'teamwire-gif-patcher-{version}'
+    prefix = f'hoowire-{version}'
     files['SOURCE-SHA256SUMS'] = ''.join(
         f'{digest(data)}  {name}\n' for name, data in files.items()).encode()
     output.mkdir(parents=True, exist_ok=True)
