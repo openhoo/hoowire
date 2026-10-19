@@ -50,10 +50,18 @@ if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notm
 }
 """, {'path': str(installer)})
     extracted = root / 'vendor'
-    result = subprocess.run(['msiexec.exe', '/a', str(installer), '/qn', 'TARGETDIR=' + str(extracted),
-                             '/L*v', str(root / 'msi.log')], timeout=120)
-    if result.returncode not in (0, 3010):
-        raise RuntimeError(f'MSI administrative extraction failed: {result.returncode}')
+    installer_log = root / 'msi.log'
+    try:
+        result = subprocess.run(['msiexec.exe', '/a', str(installer), '/qn', 'TARGETDIR=' + str(extracted),
+                                 '/L*v', str(installer_log)], timeout=300)
+        if result.returncode not in (0, 3010):
+            raise RuntimeError(f'MSI administrative extraction failed: {result.returncode}')
+    except (subprocess.TimeoutExpired, RuntimeError):
+        if installer_log.is_file():
+            # Installer diagnostics only, from a disposable runner; no app profile.
+            lines = installer_log.read_text(encoding='utf-16', errors='replace').splitlines()[-60:]
+            print('\n'.join(lines).replace(str(root), '<smoke-root>'), flush=True)
+        raise
     apps = [p.parent for p in extracted.rglob('Teamwire.exe') if (p.parent / 'resources/app.asar').is_file()]
     if len(apps) != 1:
         raise RuntimeError('The MSI did not contain one supported Teamwire app.')
