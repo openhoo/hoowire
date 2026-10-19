@@ -4,6 +4,9 @@ import argparse
 from pathlib import Path
 import subprocess
 
+import build
+import windows
+
 MACHO_MAGICS = {
     b'\xfe\xed\xfa\xce', b'\xce\xfa\xed\xfe',
     b'\xfe\xed\xfa\xcf', b'\xcf\xfa\xed\xfe',
@@ -18,8 +21,16 @@ def run(*args):
 
 def sign(app, identity):
     app = app.resolve(strict=True)
+    if build.app_platform(app) == 'windows':
+        # The supported Windows recipe edits only app.asar. The PE and its
+        # Authenticode signature remain byte-for-byte unchanged.
+        windows.executable_fuses(app / 'Teamwire.exe')
+        windows.verify_app(app)
+        return
     if app == Path('/Applications/Teamwire.app'):
         raise RuntimeError('Sign a separate app copy, then install it.')
+    if not identity:
+        raise RuntimeError('An Apple Development identity is required for macOS signing.')
     binaries = []
     for candidate in app.rglob('*'):
         if candidate.is_symlink() or not candidate.is_file():
@@ -41,6 +52,6 @@ def sign(app, identity):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('app', type=Path)
-    parser.add_argument('--identity', required=True, help='Local codesigning identity or SHA-1 fingerprint')
+    parser.add_argument('--identity', help='Local macOS codesigning identity or SHA-1 fingerprint')
     args = parser.parse_args()
     sign(args.app, args.identity)

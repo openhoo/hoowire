@@ -1,25 +1,32 @@
 # Hoowire
 
 Hoowire is an OpenHoo tool that adds a **GIF button** next to Teamwire's emoji button on
-macOS. Search GIPHY, browse animated previews, and select a GIF to add it as a
+macOS and Windows. Search GIPHY, browse animated previews, and select a GIF to add it as a
 normal draft attachment. Use Teamwire's **Send** button when ready.
 
 The automatic patcher reapplies the extension after compatible Teamwire updates.
 It waits for Teamwire to close, keeps an original backup, checks the app's
-structure, builds and signs a separate copy, and verifies the installation.
+structure, prepares a separate copy, and verifies the installation. macOS copies
+are signed locally; supported Windows executables keep their vendor signature.
 
 **Experimental, unofficial desktop modification.** Verified with Teamwire 5.0.1
-on an Apple Silicon Mac. Other versions are subject to structural compatibility
+on an Apple Silicon Mac. Windows support targets the official x64 desktop MSI
+and is checked by native Windows CI. Other versions are subject to structural compatibility
 checks; passing those checks is not a promise of future compatibility.
 
 ## Requirements
 
-- macOS with an existing Teamwire desktop installation.
-- Node.js 22 or newer and Python 3.9 or newer. The background agent uses
+- macOS or Windows 10/11 with an existing Teamwire desktop installation.
+- Node.js 22 or newer and Python 3.9 or newer.
+- **macOS:** The background agent uses
   `/usr/bin/python3`; make sure that executable works before enabling it.
-- Apple's command line developer tools (`codesign`, `security`, `ditto`, and
+- **macOS:** Apple's command line developer tools (`codesign`, `security`, `ditto`, and
   `plutil`) and a usable **Apple Development** signing certificate with its private
   key in the local keychain. You can manage development certificates in Xcode.
+- **Windows:** A standard Python installation with `pythonw.exe`, Windows
+  PowerShell 5.1, and Task Scheduler. No Apple tools or local signing certificate
+  are required. Use Teamwire's per-user install and a normal terminal: the
+  background task runs with your normal user permissions.
 - Write access to the Teamwire installation directory and enough disk space for
   several complete app copies. Backups are retained without automatic pruning.
 - Network access to GIPHY for search, previews, and the selected GIF.
@@ -37,6 +44,35 @@ terminal in the extracted directory. Alternatively:
 git clone https://github.com/openhoo/hoowire.git
 cd hoowire
 ```
+
+### Windows
+
+Quit Teamwire, open a normal PowerShell terminal in the extracted Hoowire folder,
+and run:
+
+```powershell
+py -3 scripts/patcher.py enable
+py -3 scripts/patcher.py apply
+py -3 scripts/patcher.py status
+```
+
+Hoowire searches the usual per-user and Program Files locations. If Teamwire is
+installed elsewhere or several copies are found, select its installation folder
+or executable explicitly:
+
+```powershell
+py -3 scripts/patcher.py enable --app "C:\Users\You\AppData\Local\Programs\Teamwire\Teamwire.exe"
+py -3 scripts/patcher.py apply
+```
+
+The app directory must be writable by your normal user so the scheduled task can
+replace it. For a protected, machine-wide installation, use Teamwire's per-user
+installation instead. Keep the state directory and app on the same drive for
+atomic recovery. Windows settings, runtime, logs and backups live in
+`%LOCALAPPDATA%\Hoowire`. Use the same `py -3 scripts/patcher.py` prefix with the
+`check`, `disable`, `status`, or `apply --rebuild` commands below.
+
+### macOS
 
 Quit Teamwire, then enable the automatic patcher and apply the first patch:
 
@@ -68,9 +104,9 @@ adds an attachment to the current draft; it does not send a message.
 
 ## Automatic operation
 
-`enable` installs a standalone runtime and a user LaunchAgent.
+`enable` installs a standalone runtime and a per-user background agent.
 
-Hoowire retains the original service identifier and data folder so existing
+On macOS, Hoowire retains the original service identifier and data folder so existing
 installations continue to use the same configuration and backups.
 
 | Item | Location |
@@ -79,8 +115,13 @@ installations continue to use the same configuration and backups.
 | Runtime, configuration, status and logs | `~/Library/Application Support/Teamwire GIF Patcher/` |
 | Original and replaced app copies | `~/Library/Application Support/Teamwire GIF Patcher/backups/` |
 
-The agent checks at login, when watched app resources change, and every 120
-seconds. It waits at least 15 seconds for a changed bundle to settle and never
+On Windows the agent is a Task Scheduler task under `OpenHoo`, named
+`Hoowire-<your user SID>`. It runs at login and every two minutes, using
+`pythonw.exe` to avoid opening a console. It uses your normal interactive login
+and stops running when you log out. `disable` unregisters this user's task.
+
+The agent checks at login and every 120 seconds; macOS also watches app resource
+changes. It waits at least 15 seconds for a changed bundle to settle and never
 quits or launches Teamwire. An unsupported structure or missing signer produces
 a `blocked` status and a retry after 15 minutes, or sooner when the app changes.
 Use `apply` to force a new check after correcting a problem.
@@ -110,7 +151,8 @@ python3 scripts/patcher.py disable
 
 This keeps both the installed GIF extension and the backups. To restore the
 original Teamwire app, disable the agent, quit Teamwire, and find `original_backup`
-in `state.json` or the `vendor-<sha256>.app` directory for the current version.
+in `state.json` or the `vendor-<sha256>.app` (macOS) / `vendor-<sha256>` (Windows)
+directory for the current version.
 Restore that explicit backup with:
 
 ```sh
@@ -120,6 +162,14 @@ python3 scripts/install.py \
 ```
 
 The installer verifies the backup's signature and retains the app it replaces.
+On Windows the equivalent command is:
+
+```powershell
+py -3 scripts/patcher.py disable
+# Quit Teamwire, then use the original_backup path recorded in state.json:
+py -3 scripts/install.py --source "C:\path\to\vendor-<sha256>" --destination "C:\path\to\Teamwire"
+```
+
 For a custom app location, pass that location as `--destination`. Restoring an
 older backup also restores that older Teamwire version. Installing a fresh
 official Teamwire build is another way to remove the extension after disabling.
@@ -135,13 +185,21 @@ composer's actual minified bindings. Missing or ambiguous anchors, unsupported
 entry points, and changes to the checked Electron preload/security configuration
 are rejected before app replacement.
 
-The patched copy and its native binaries are signed consistently with your local
+On macOS, the patched copy and its native binaries are signed consistently with your local
 Apple Development identity. Existing entitlements, signing flags, and hardened
 runtime metadata are preserved. This changes the app's signing identity and does
 not retain the vendor's notarization. A managed-device policy may therefore
 reject the modified app. Signature verification, a recovery journal, retained
 copies, and rollback protect installation; they cannot establish compatibility
-with every future Teamwire update. See [verified scope](docs/compatibility.md).
+with every future Teamwire update.
+
+On Windows, Hoowire checks the executable's Authenticode signature and supported
+Teamwire publisher. It modifies only `resources/app.asar`, leaving the executable,
+its signature, and Electron fuses unchanged. Supported builds have embedded ASAR
+validation disabled by the vendor. A future build with that validation enabled,
+or an unknown fuse format, is rejected before writing; Hoowire does not disable
+the protection or invalidate the executable signature. This limitation is
+checked independently of the composer checks. See [verified scope](docs/compatibility.md).
 
 ## GIPHY and privacy
 
@@ -170,11 +228,18 @@ python3 -m unittest discover -s test -p 'test_*.py' -v
 python3 scripts/package.py
 ```
 
-The complete suite requires macOS (`ditto` is used with synthetic app fixtures).
+The regression suite runs on macOS and Windows with synthetic app fixtures.
 The Node tests are portable. Tests run offline and do not send messages or use a
 real Teamwire profile. Packaging verifies the vendored parser and creates
 deterministic source archives plus `SHA256SUMS` under `dist/`. Only explicit
 source and documentation paths can enter a release.
+
+The manually dispatched `windows-vendor` CI option additionally downloads the
+pinned official MSI, verifies its checksum and publisher signature, extracts a
+disposable copy, and exercises patching, the real renderer and preload bridge,
+the scheduled runtime, and restore. Its profile is empty; it never authenticates
+or sends a chat message. GIPHY availability is reported separately because a
+datacenter network may be unable to access that service.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing the patch recipe and
 [SECURITY.md](SECURITY.md) for reporting security issues.

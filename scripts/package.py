@@ -15,10 +15,10 @@ PUBLIC_FILES = (
     'VERSION', 'README.md', 'LICENSE', 'NOTICE', 'CONTRIBUTING.md', 'SECURITY.md',
     'docs/compatibility.md',
     'scripts/build.py', 'scripts/install.py', 'scripts/patcher.py',
-    'scripts/sign.py', 'scripts/transform.cjs', 'scripts/package.py',
+    'scripts/sign.py', 'scripts/transform.cjs', 'scripts/package.py', 'scripts/windows.py',
     'src/main.cjs', 'src/preload.cjs', 'src/provider.cjs', 'src/picker.js',
     'test/fixture.js', 'test/provider.test.cjs', 'test/transform.test.cjs',
-    'test/test_patcher.py',
+    'test/test_patcher.py', 'test/test_windows.py', 'test/windows_smoke.py', 'test/windows_runtime.cjs',
     'vendor/acorn/acorn.cjs', 'vendor/acorn/LICENSE',
     'vendor/acorn/package.json', 'vendor/acorn/PROVENANCE.json',
 )
@@ -79,8 +79,8 @@ def package(output):
                 item.name: archive.extractfile(item).read() for item in members} != expected:
             raise RuntimeError('TAR contents differ from the release source allowlist.')
     checksums = output / 'SHA256SUMS'
-    checksums.write_text(''.join(f'{digest(path.read_bytes())}  {path.name}\n'
-                                 for path in (zip_path, tar_path)))
+    checksums.write_bytes(''.join(f'{digest(path.read_bytes())}  {path.name}\n'
+                                  for path in (zip_path, tar_path)).encode('utf-8'))
     return {'version': version, 'source_files': len(files) - 1,
             'assets': [str(path) for path in (zip_path, tar_path, checksums)]}
 

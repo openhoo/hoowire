@@ -11,6 +11,8 @@ import shutil
 import struct
 import subprocess
 
+import windows
+
 ROOT = Path(__file__).resolve().parents[1]
 RECIPE_VERSION = 2
 EXTENSION_FILES = ('provider.cjs', 'main.cjs', 'preload.cjs', 'picker.js')
@@ -28,6 +30,22 @@ def sha(data):
 def extension_digest():
     return sha(b''.join(name.encode() + b'\0' + (ROOT / 'src' / name).read_bytes() + b'\0'
                         for name in EXTENSION_FILES))
+
+
+def app_platform(app):
+    mac = (app / 'Contents/Info.plist').is_file()
+    win = (app / 'resources/app.asar').is_file() and (app / 'Teamwire.exe').is_file()
+    if mac == win:
+        raise RuntimeError('Expected one supported macOS or Windows Teamwire app layout.')
+    return 'macos' if mac else 'windows'
+
+
+def asar_path(app):
+    return app / ('Contents/Resources/app.asar' if app_platform(app) == 'macos' else 'resources/app.asar')
+
+
+def app_copy_name(app):
+    return 'Teamwire.app' if app_platform(app) == 'macos' else 'Teamwire'
 
 
 class Archive:
@@ -85,22 +103,28 @@ class Archive:
 
 
 def load(app):
-    info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
-    if info.get('CFBundleIdentifier') != 'eu.teamwire.app':
-        raise RuntimeError('The selected app is not Teamwire.')
-    archive = Archive((app / 'Contents/Resources/app.asar').read_bytes())
+    platform = app_platform(app)
+    if platform == 'macos':
+        info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
+        if info.get('CFBundleIdentifier') != 'eu.teamwire.app':
+            raise RuntimeError('The selected app is not Teamwire.')
+    else:
+        info = {'platform': 'windows', 'fuses': windows.executable_fuses(app / 'Teamwire.exe')}
+    archive = Archive(asar_path(app).read_bytes())
     package = json.loads(archive.read('package.json'))
-    if package.get('name') != 'teamwire' or package.get('version') != info.get('CFBundleShortVersionString'):
+    if package.get('name') != 'teamwire' or (platform == 'macos' and package.get('version') != info.get('CFBundleShortVersionString')):
         raise RuntimeError('Teamwire package and bundle metadata disagree.')
-    expected = info.get('ElectronAsarIntegrity', {}).get('Resources/app.asar', {})
-    if expected.get('algorithm') != 'SHA256' or expected.get('hash') != sha(archive.raw_header):
-        raise RuntimeError('ASAR header does not match the bundle integrity metadata.')
+    if platform == 'macos':
+        expected = info.get('ElectronAsarIntegrity', {}).get('Resources/app.asar', {})
+        if expected.get('algorithm') != 'SHA256' or expected.get('hash') != sha(archive.raw_header):
+            raise RuntimeError('ASAR header does not match the bundle integrity metadata.')
     return archive, info, package
 
 
 def inspect(app):
     archive, _, package = load(app)
     fingerprint = sha(archive.data)
+    platform = app_platform(app)
     if archive.has(MANIFEST):
         manifest = json.loads(archive.read(MANIFEST))
         if manifest.get('schema') != 1:
@@ -109,17 +133,17 @@ def inspect(app):
             if sha(archive.read(path)) != digest:
                 raise RuntimeError(f'Installed patch was modified or is incomplete: {path}')
         current = manifest.get('extension_sha256') == extension_digest() and manifest.get('recipe') == RECIPE_VERSION
-        return {'kind': 'patched' if current else 'extension_update', 'version': package['version'],
+        return {'kind': 'patched' if current else 'extension_update', 'version': package['version'], 'platform': platform,
                 'asar_sha256': fingerprint, 'original_asar_sha256': manifest['original_asar_sha256'],
                 'manifest': manifest}
     if fingerprint in LEGACY_PATCHES:
         current = all(archive.read('build/gif-extension/' + name) == (ROOT / 'src' / name).read_bytes()
                       for name in EXTENSION_FILES)
-        return {'kind': 'legacy_current' if current else 'extension_update', 'version': package['version'],
+        return {'kind': 'legacy_current' if current else 'extension_update', 'version': package['version'], 'platform': platform,
                 'asar_sha256': fingerprint, 'original_asar_sha256': LEGACY_PATCHES[fingerprint]}
     if archive.has('build/gif-extension/picker.js'):
         raise RuntimeError('Unrecognized existing GIF patch. Restore its vendor backup before patching.')
-    return {'kind': 'vendor', 'version': package['version'], 'asar_sha256': fingerprint,
+    return {'kind': 'vendor', 'version': package['version'], 'platform': platform, 'asar_sha256': fingerprint,
             'original_asar_sha256': fingerprint}
 
 
@@ -129,7 +153,7 @@ def javascript(operation, source, node_bin=None, source_type='module'):
         raise RuntimeError('Node.js is unavailable; configure an absolute node path.')
     result = subprocess.run([str(node_bin), str(ROOT / 'scripts/transform.cjs')],
                             input=json.dumps({'operation': operation, 'source': source, 'sourceType': source_type}),
-                            text=True, capture_output=True, timeout=90)
+                            encoding='utf-8', capture_output=True, timeout=90)
     if result.returncode:
         raise RuntimeError('Compatibility check failed: ' + result.stderr.strip())
     return json.loads(result.stdout)
@@ -204,12 +228,13 @@ def build(app, evidence_path=None, node_bin=None):
     for path, expected in changes.items():
         if checked.read(path) != expected or checked.node(path)['integrity']['hash'] != sha(expected):
             raise RuntimeError(f'Archive verification failed: {path}')
-    archive_path = app / 'Contents/Resources/app.asar'
+    archive_path = asar_path(app)
     archive_path.write_bytes(patched)
-    plist_path = app / 'Contents/Info.plist'
-    info = plistlib.loads(plist_path.read_bytes())
-    info['ElectronAsarIntegrity'] = {'Resources/app.asar': {'algorithm': 'SHA256', 'hash': sha(checked.raw_header)}}
-    plist_path.write_bytes(plistlib.dumps(info, sort_keys=False))
+    if app_platform(app) == 'macos':
+        plist_path = app / 'Contents/Info.plist'
+        info = plistlib.loads(plist_path.read_bytes())
+        info['ElectronAsarIntegrity'] = {'Resources/app.asar': {'algorithm': 'SHA256', 'hash': sha(checked.raw_header)}}
+        plist_path.write_bytes(plistlib.dumps(info, sort_keys=False))
     if inspect(app)['kind'] != 'patched':
         raise RuntimeError('Final patch manifest verification failed.')
     result = {'app': str(app), 'teamwire_version': manifest['teamwire_version'], 'recipe': RECIPE_VERSION,

@@ -1,5 +1,25 @@
 # Verified scope
 
+## Hoowire 1.1.0: Windows support
+
+Windows uses the same composer transformation, picker and preload bridge as
+macOS, with a Windows layout adapter, Authenticode verification, process checks,
+native file locks, and a per-user scheduled task. Windows app copies retain the
+original executable and all fuse values. The official Windows 5.0.1 x64 MSI was
+inspected during development; its embedded ASAR validation fuse is disabled.
+The renderer and composer bindings were successfully discovered in its actual
+archive. An enabled or unknown integrity configuration is rejected before writes.
+
+The pinned vendor installer SHA-256 is
+`0ce660fde43034eac59604eee3b63dbac480bc2087b8d729cd9a93b6590271b3`.
+It is fetched only by the opt-in Windows integration job and is not redistributed.
+
+Native Windows qualification is pending the integration CI run. The normal suite
+adds Windows fixture, lock, rollback, crash recovery and signature rejection
+coverage. The real renderer probe uses an empty profile and an isolated file
+callback; it does not qualify authenticated composer use or recipient delivery.
+External GIPHY search/selection results are recorded separately in the CI summary.
+
 ## Hoowire 1.0.1
 
 Version 1.0.1 names the project Hoowire and updates its repository links, release
@@ -50,7 +70,8 @@ been qualified by this release.
    file goes through Teamwire's existing attachment callback.
 4. `src/preload.cjs` exposes search, download and cancel operations. `src/main.cjs`
    checks the requesting Electron frame and delegates to `provider.cjs`.
-5. `sign.py` signs the separate app copy with the configured local identity.
+5. `sign.py` signs macOS app copies with the configured local identity, or verifies
+   the unchanged vendor executable on Windows.
 6. `install.py` verifies and replaces the app with retained backups and recovery.
 7. `patcher.py` runs these steps through a bounded, locked background pass.
 

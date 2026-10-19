@@ -2,7 +2,6 @@
 """Hoowire: automatically restore the GIF picker after compatible Teamwire updates."""
 import argparse
 from datetime import datetime
-import fcntl
 import json
 import os
 from pathlib import Path
@@ -16,10 +15,11 @@ import time
 import build
 import install
 import sign
+import windows
 
 ROOT = Path(__file__).resolve().parents[1]
 # Keep the original paths and service ID so existing installations retain state.
-SUPPORT = Path.home() / 'Library/Application Support/Teamwire GIF Patcher'
+SUPPORT = windows.support_directory() if os.name == 'nt' else Path.home() / 'Library/Application Support/Teamwire GIF Patcher'
 LABEL = 'eu.openhoo.teamwire-gif-patcher'
 PLIST = Path.home() / 'Library/LaunchAgents' / (LABEL + '.plist')
 
@@ -29,8 +29,10 @@ def read_json(path, default=None):
 
 
 def stamp(app):
-    paths = [app, app / 'Contents/Resources/app.asar', app / 'Contents/Info.plist',
-             app / 'Contents/MacOS/Teamwire', app / 'Contents/_CodeSignature/CodeResources']
+    paths = [app, build.asar_path(app)]
+    paths += ([app / 'Teamwire.exe'] if build.app_platform(app) == 'windows' else
+              [app / 'Contents/Info.plist', app / 'Contents/MacOS/Teamwire',
+               app / 'Contents/_CodeSignature/CodeResources'])
     values = []
     for path in paths:
         value = path.stat()
@@ -70,7 +72,7 @@ def verified_vendor(app, fingerprint):
 
 def save_vendor(source, details, state_dir):
     fingerprint = details['original_asar_sha256']
-    name = f'vendor-{fingerprint}.app'
+    name = vendor_name(details)
     target = state_dir / 'backups' / name
     if target.exists():
         verified_vendor(target, fingerprint)
@@ -78,15 +80,20 @@ def save_vendor(source, details, state_dir):
     verified_vendor(source, fingerprint)
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.vendor-', dir=target.parent) as temporary:
-        staged = Path(temporary) / 'Teamwire.app'
-        subprocess.run(['ditto', str(source), str(staged)], check=True)
+        staged = Path(temporary) / build.app_copy_name(source)
+        install.copy_app(source, staged)
         verified_vendor(staged, fingerprint)
         staged.rename(target)
     return target
 
 
+def vendor_name(details):
+    suffix = '' if details.get('platform') == 'windows' else '.app'
+    return f'vendor-{details["original_asar_sha256"]}{suffix}'
+
+
 def original_for(details, state_dir):
-    candidate = state_dir / 'backups' / f'vendor-{details["original_asar_sha256"]}.app'
+    candidate = state_dir / 'backups' / vendor_name(details)
     if not candidate.exists():
         raise RuntimeError('The original vendor backup for this patch is missing.')
     verified_vendor(candidate, details['original_asar_sha256'])
@@ -97,9 +104,9 @@ def run_once(config, state_dir, force=False, rebuild=False, now=None):
     """One bounded pass. It never quits or launches Teamwire."""
     now = time.time() if now is None else now
     state_dir.mkdir(parents=True, exist_ok=True)
-    with (state_dir / 'patcher.lock').open('a') as lock:
+    with (state_dir / 'patcher.lock').open('a+b') as lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            install.lock_file(lock)
         except BlockingIOError:
             return {'status': 'busy', 'message': 'Another patcher pass is active.'}
         previous = read_json(state_dir / 'state.json')
@@ -143,7 +150,7 @@ def run_once(config, state_dir, force=False, rebuild=False, now=None):
             if is_running():
                 return report('waiting_exit', 'A patch is pending; it will apply after Teamwire closes.')
             install.verify(app)
-            if not identity_available(config['identity']):
+            if details['platform'] == 'macos' and not identity_available(config['identity']):
                 raise RuntimeError('The configured local signing identity is unavailable. Re-enable with a valid identity.')
             if details['kind'] == 'vendor':
                 # Prove compatibility before creating backups or changing the app.
@@ -156,10 +163,10 @@ def run_once(config, state_dir, force=False, rebuild=False, now=None):
             work = state_dir / 'work'
             work.mkdir(exist_ok=True)
             with tempfile.TemporaryDirectory(prefix='patch-', dir=work) as temporary:
-                staged = Path(temporary) / 'Teamwire.app'
-                subprocess.run(['ditto', str(source), str(staged)], check=True)
+                staged = Path(temporary) / build.app_copy_name(source)
+                install.copy_app(source, staged)
                 build_result = build.build(staged, state_dir / 'last-build.json', config['node'])
-                sign.sign(staged, config['identity'])
+                sign.sign(staged, config.get('identity'))
 
                 def guard():
                     install.ensure_stopped()
@@ -176,7 +183,9 @@ def run_once(config, state_dir, force=False, rebuild=False, now=None):
                                          postcheck=postcheck, journal=journal)
             state.update(observed=stamp(app), asar_sha256=result['asar_sha256'],
                          original_backup=str(source), replaced_app=result['retained_previous_app'])
-            return report('current', 'GIF picker patched, signed, installed and verified.')
+            message = ('GIF picker patched, installed and verified; original executable signature retained.'
+                       if details['platform'] == 'windows' else 'GIF picker patched, signed, installed and verified.')
+            return report('current', message)
         except Exception as error:
             return report('blocked', str(error), retry_after=now + config.get('retry_seconds', 900))
 
@@ -186,10 +195,14 @@ def service_target():
 
 
 def loaded():
+    if os.name == 'nt':
+        return windows.loaded()
     return subprocess.run(['launchctl', 'print', service_target()], capture_output=True).returncode == 0
 
 
 def disable_service():
+    if os.name == 'nt':
+        return windows.disable_service()
     if loaded():
         subprocess.run(['launchctl', 'bootout', service_target()], check=True)
 
@@ -203,16 +216,23 @@ def enable(args):
     node = str(args.node or old.get('node') or shutil.which('node') or '')
     if not node or not Path(node).is_file():
         raise RuntimeError('Specify an installed Node.js executable with --node.')
-    identity = args.identity or old.get('identity')
-    if not identity or (not args.identity and not identity_available(identity)):
-        identity = discover_identity()
-    if not identity_available(identity):
-        raise RuntimeError('Selected signing identity is unavailable.')
+    identity = None
+    if build.app_platform(args.app) == 'macos':
+        identity = args.identity or old.get('identity')
+        if not identity or (not args.identity and not identity_available(identity)):
+            identity = discover_identity()
+        if not identity_available(identity):
+            raise RuntimeError('Selected signing identity is unavailable.')
+    if os.name == 'nt':
+        # Check directory replacement permission in the normal user context
+        # that will also run the scheduled task.
+        with tempfile.TemporaryDirectory(prefix='.hoowire-access-', dir=args.app.parent):
+            pass
     config = {'app': str(args.app.absolute()), 'node': str(Path(node).absolute()), 'identity': identity,
               'settle_seconds': 15, 'interval_seconds': 120, 'retry_seconds': 900, 'enabled': True}
     # Capture the existing legacy patch's vendor backup during the one-time setup.
     details = build.inspect(args.app)
-    if details['kind'] != 'vendor' and not (state_dir / 'backups' / f'vendor-{details["original_asar_sha256"]}.app').exists():
+    if details['kind'] != 'vendor' and not (state_dir / 'backups' / vendor_name(details)).exists():
         candidates = sorted((ROOT / 'backups').glob('*.app')) if (ROOT / 'backups').exists() else []
         for candidate in candidates:
             if build.inspect(candidate)['asar_sha256'] == details['original_asar_sha256']:
@@ -235,6 +255,9 @@ def enable(args):
                 runtime.rename(previous)
             prepared.rename(runtime)
     install.atomic_json(state_dir / 'config.json', config)
+    if os.name == 'nt':
+        result = windows.enable_service(runtime, state_dir)
+        return dict(result, runtime=str(runtime), app=config['app'], interval_seconds=config['interval_seconds'])
     agent = {
         'Label': LABEL,
         'ProgramArguments': ['/usr/bin/python3', str(runtime / 'scripts/patcher.py'), 'check', '--quiet',
@@ -255,6 +278,10 @@ def enable(args):
             'app': config['app'], 'interval_seconds': config['interval_seconds']}
 
 
+def default_app():
+    return windows.find_app() if os.name == 'nt' else Path('/Applications/Teamwire.app')
+
+
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
@@ -268,18 +295,24 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == 'enable':
-            args.app = args.app or Path('/Applications/Teamwire.app')
+            old = read_json(args.state_dir / 'config.json')
+            args.app = args.app or (Path(old['app']) if old.get('app') else default_app())
+            if args.app.name.casefold() == 'teamwire.exe':
+                args.app = args.app.parent
             result = enable(args)
         elif args.command == 'disable':
             disable_service()
-            PLIST.unlink(missing_ok=True)
+            if os.name != 'nt':
+                PLIST.unlink(missing_ok=True)
             config = read_json(args.state_dir / 'config.json')
             config['enabled'] = False
             install.atomic_json(args.state_dir / 'config.json', config)
             result = {'enabled': loaded(), 'backups_retained': str(args.state_dir / 'backups')}
         elif args.command == 'status':
             config = read_json(args.state_dir / 'config.json')
-            app = args.app or Path(config.get('app', '/Applications/Teamwire.app'))
+            app = args.app or (Path(config['app']) if config.get('app') else default_app())
+            if app.name.casefold() == 'teamwire.exe':
+                app = app.parent
             result = {'enabled': loaded(), 'app': str(app),
                       'installed': build.inspect(app), 'worker': read_json(args.state_dir / 'state.json'),
                       'state_directory': str(args.state_dir)}

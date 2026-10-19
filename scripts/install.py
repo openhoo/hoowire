@@ -3,23 +3,32 @@
 import argparse
 from contextlib import contextmanager
 from datetime import datetime
-import fcntl
 import hashlib
 import json
 from pathlib import Path
-import plistlib
 import shutil
 import subprocess
 import tempfile
+import os
+import sys
+
+import build
+import windows
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def app_version(app):
-    return plistlib.loads((app / 'Contents/Info.plist').read_bytes())['CFBundleShortVersionString']
+    return build.load(app)[2]['version']
 
 
 def verify(app):
+    if build.app_platform(app) == 'windows':
+        _, _, package = build.load(app)
+        signed = windows.verify_app(app)
+        if not str(signed['version']).startswith(package['version'] + '.') and signed['version'] != package['version']:
+            raise RuntimeError('Teamwire archive and signed executable versions disagree.')
+        return
     info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
     if info['CFBundleIdentifier'] != 'eu.teamwire.app':
         raise RuntimeError('Source is not Teamwire.')
@@ -27,6 +36,8 @@ def verify(app):
 
 
 def ensure_stopped():
+    if os.name == 'nt':
+        return windows.ensure_stopped()
     processes = subprocess.check_output(['ps', '-axo', 'pid=,comm='], text=True)
     if any('/Teamwire.app/Contents/' in line or line.rstrip().endswith('/Contents/MacOS/Teamwire')
            for line in processes.splitlines()):
@@ -41,12 +52,35 @@ def atomic_json(path, value):
     temporary.replace(path)
 
 
+def lock_file(stream):
+    if os.name == 'nt':
+        import msvcrt
+        if stream.seek(0, 2) == 0:
+            stream.write(b'\0')
+            stream.flush()
+        stream.seek(0)
+        try:
+            msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError as error:
+            raise BlockingIOError('Another Hoowire process holds the lock.') from error
+    else:
+        import fcntl
+        fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def copy_app(source, destination):
+    if sys.platform == 'darwin' and build.app_platform(source) == 'macos':
+        subprocess.run(['ditto', str(source), str(destination)], check=True)
+    else:
+        shutil.copytree(source, destination, symlinks=True)
+
+
 @contextmanager
 def destination_lock(destination):
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with (destination.parent / '.teamwire-gif-install.lock').open('a') as lock:
+    with (destination.parent / '.teamwire-gif-install.lock').open('a+b') as lock:
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            lock_file(lock)
         except BlockingIOError:
             raise RuntimeError('Another Teamwire install or recovery is active.')
         yield
@@ -69,11 +103,11 @@ def _recover(journal, destination):
     if destination.exists():
         try:
             verify(destination)
-            digest = hashlib.sha256((destination / 'Contents/Resources/app.asar').read_bytes()).hexdigest()
+            digest = hashlib.sha256(build.asar_path(destination).read_bytes()).hexdigest()
             if digest == record['installed_asar_sha256']:
                 journal.unlink()
                 return True
-        except (subprocess.CalledProcessError, OSError):
+        except (subprocess.CalledProcessError, OSError, RuntimeError):
             pass
         if backup.exists():
             verify(backup)
@@ -113,14 +147,20 @@ def _install(source, destination, backup_root=None, evidence_dir=None, guard=Non
     timestamp = datetime.now().strftime('%Y%m%d-%H%M%S-%f')
     backup_root = backup_root or ROOT / 'backups'
     evidence_dir = evidence_dir or ROOT / 'evidence'
-    backup = backup_root / f'Teamwire-before-install-{timestamp}.app'
+    suffix = '.app' if build.app_platform(source) == 'macos' else ''
+    backup = backup_root / f'Teamwire-before-install-{timestamp}{suffix}'
     if backup.exists():
         raise RuntimeError(f'Backup path already exists: {backup}')
+    existing_parent = backup.parent
+    while not existing_parent.exists():
+        existing_parent = existing_parent.parent
+    if existing_parent.stat().st_dev != destination.parent.stat().st_dev:
+        raise RuntimeError('The app and backup directory must be on the same filesystem for atomic recovery.')
     temporary = Path(tempfile.mkdtemp(prefix='.teamwire-gif-', dir=destination.parent))
     retained = False
     try:
-        staged = Path(temporary) / 'Teamwire.app'
-        subprocess.run(['ditto', str(source), str(staged)], check=True)
+        staged = Path(temporary) / build.app_copy_name(source)
+        copy_app(source, staged)
         verify(staged)
         if postcheck:
             postcheck(staged)
@@ -132,7 +172,7 @@ def _install(source, destination, backup_root=None, evidence_dir=None, guard=Non
                 raise RuntimeError('A previous installation requires recovery first.')
             atomic_json(journal, {'destination': str(destination), 'backup': str(backup),
                                  'staged': str(staged), 'installed_asar_sha256': hashlib.sha256(
-                                     (staged / 'Contents/Resources/app.asar').read_bytes()).hexdigest()})
+                                     build.asar_path(staged).read_bytes()).hexdigest()})
         if destination.exists():
             backup.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(destination), str(backup))
@@ -160,7 +200,7 @@ def _install(source, destination, backup_root=None, evidence_dir=None, guard=Non
         'installed_at': datetime.now().astimezone().isoformat(),
         'source': str(source), 'destination': str(destination),
         'version': app_version(destination),
-        'asar_sha256': hashlib.sha256((destination / 'Contents/Resources/app.asar').read_bytes()).hexdigest(),
+        'asar_sha256': hashlib.sha256(build.asar_path(destination).read_bytes()).hexdigest(),
         'retained_previous_app': str(backup) if retained else None,
     }
     atomic_json(evidence_dir / f'install-{timestamp}.json', result)
@@ -169,7 +209,10 @@ def _install(source, destination, backup_root=None, evidence_dir=None, guard=Non
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source', type=Path, default=ROOT / 'build/Teamwire.app')
-    parser.add_argument('--destination', type=Path, default=Path('/Applications/Teamwire.app'))
+    parser.add_argument('--source', type=Path, required=True)
+    parser.add_argument('--destination', type=Path)
     args = parser.parse_args()
+    args.destination = args.destination or (windows.find_app() if os.name == 'nt' else Path('/Applications/Teamwire.app'))
+    if args.destination.name.casefold() == 'teamwire.exe':
+        args.destination = args.destination.parent
     print(json.dumps(install(args.source, args.destination), indent=2))

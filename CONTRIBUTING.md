@@ -1,6 +1,6 @@
 # Contributing
 
-Use Node.js 22+ and Python 3.9+. Full tests require macOS. Run the three commands
+Use Node.js 22+ and Python 3.9+. Tests run on macOS and Windows. Run the three commands
 in the README's development section before proposing a release.
 
 - Keep Teamwire binaries, extracted bundles, app backups, profiles, tokens,
@@ -11,6 +11,9 @@ in the README's development section before proposing a release.
   checks, media URL validation, size limits and cancellation intact.
 - Preserve hardened runtime and existing entitlements. Sign only a separate copy
   and verify it before installation. Keep rollback and recovery working.
+- On Windows, retain the vendor executable and signature, check the publisher
+  and fuse state, and reject enabled embedded ASAR integrity. Do not change fuses
+  or weaken signature checks to support another build.
 - A fixture passing with a changed version number is not a new compatibility
   claim. Record real integration results in `docs/compatibility.md`, including
   what was not tested. Do not send chat messages as part of automated tests.

@@ -3,6 +3,9 @@ __pycache__/
 .DS_Store
 *.app/
 *.asar
+*.msi
+*.exe
+*.cab
 *.p12
 *.pfx
 *.key
