@@ -148,6 +148,14 @@ with open(sys.argv[2], 'a+b') as stream:
         with self.assertRaises(RuntimeError):
             windows.verify_app(self.app)
 
+    @unittest.skipUnless(os.name == 'nt', 'Requires native Windows PowerShell')
+    def test_suppressed_lookup_succeeds_but_terminating_errors_fail(self):
+        self.assertEqual(windows.powershell(
+            '$null = Get-Item -LiteralPath $payload.path -ErrorAction SilentlyContinue',
+            {'path': str(self.root / 'missing')}), '')
+        with self.assertRaisesRegex(RuntimeError, 'native-failure-probe'):
+            windows.powershell("throw 'native-failure-probe'")
+
 
 if __name__ == '__main__':
     unittest.main()

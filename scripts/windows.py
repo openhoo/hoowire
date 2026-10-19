@@ -33,8 +33,18 @@ $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
 $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
 """
+    # -Command otherwise converts a deliberately suppressed lookup failure
+    # (such as a not-yet-created task folder) into exit 1 with no error text.
+    # Terminating errors still fail explicitly and retain their diagnostic.
+    wrapped = 'try {\n' + script + """
+exit 0
+} catch {
+    [Console]::Error.WriteLine($_.Exception.Message)
+    exit 1
+}
+"""
     result = subprocess.run(
-        [str(system_shell), '-NoProfile', '-NonInteractive', '-Command', prefix + script],
+        [str(system_shell), '-NoProfile', '-NonInteractive', '-Command', prefix + wrapped],
         input=json.dumps(payload or {}), encoding='utf-8', capture_output=True, timeout=60,
         creationflags=process_flags(), env=environment)
     if result.returncode:
