@@ -22,6 +22,11 @@ def process_flags():
 
 def powershell(script, payload=None):
     # Values travel as JSON over stdin, never as PowerShell source or shell text.
+    system_shell = Path(os.environ.get('WINDIR', r'C:\Windows')) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+    # PowerShell 7 terminals export a different PSModulePath. Passing that to
+    # Windows PowerShell can shadow the system Security/ScheduledTasks modules.
+    environment = {key: value for key, value in os.environ.items() if key.casefold() != 'psmodulepath'}
+    environment['PSModulePath'] = str(system_shell.parent / 'Modules')
     prefix = """
 $ErrorActionPreference = 'Stop'
 [Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false)
@@ -29,11 +34,9 @@ $ErrorActionPreference = 'Stop'
 $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
 """
     result = subprocess.run(
-        [str(Path(os.environ.get('WINDIR', r'C:\Windows')) /
-             'System32/WindowsPowerShell/v1.0/powershell.exe'),
-         '-NoProfile', '-NonInteractive', '-Command', prefix + script],
+        [str(system_shell), '-NoProfile', '-NonInteractive', '-Command', prefix + script],
         input=json.dumps(payload or {}), encoding='utf-8', capture_output=True, timeout=60,
-        creationflags=process_flags())
+        creationflags=process_flags(), env=environment)
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or 'Windows operation failed.')
     return result.stdout.strip()

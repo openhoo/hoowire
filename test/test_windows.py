@@ -135,6 +135,8 @@ with open(sys.argv[2], 'a+b') as stream:
         self.assertNotIn(value, args[0][-1])
         self.assertEqual(json.loads(kwargs['input'])['path'], value)
         self.assertEqual(kwargs['encoding'], 'utf-8')
+        self.assertTrue(kwargs['env']['PSModulePath'].endswith('Modules'))
+        self.assertNotIn('PowerShell/7', kwargs['env']['PSModulePath'])
 
     def test_signed_version_must_match_archive(self):
         with patch.object(windows, 'verify_app', return_value={'version': '99.0.0.1'}):
