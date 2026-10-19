@@ -6,6 +6,7 @@ from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
+import plistlib
 import shutil
 import subprocess
 import tempfile

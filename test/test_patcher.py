@@ -69,6 +69,14 @@ class PatcherTests(unittest.TestCase):
             build.build(self.app, self.root / 'another.json')
         self.assertEqual((self.app / 'Contents/Resources/app.asar').read_bytes(), before)
 
+    def test_macos_verification_preserves_signature_gate(self):
+        with patch.object(install.subprocess, 'run') as verifier:
+            install.verify(self.app)
+            self.assertEqual(verifier.call_count, 1)
+            verifier.side_effect = subprocess.CalledProcessError(1, 'codesign')
+            with self.assertRaises(subprocess.CalledProcessError):
+                install.verify(self.app)
+
     def test_unsupported_composer_leaves_bundle_bytes_unchanged(self):
         target = self.root / 'Other/Teamwire.app'
         fixture(target, renderer=(ROOT / 'test/fixture.js').read_text().replace('getAssetFromFile', 'newAttachmentAPI'))
