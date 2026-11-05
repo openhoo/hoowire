@@ -32,7 +32,6 @@ use zeroize::Zeroizing;
 pub const DEFAULT_TENANT: Uuid = Uuid::from_u128(1);
 const SESSION_TTL_SECONDS: u32 = 3600;
 const MAX_PENDING_HANDSHAKES: usize = 4096;
-const MAX_WS_TICKETS: usize = 4096;
 
 #[derive(Clone)]
 pub struct Auth {
@@ -52,7 +51,6 @@ struct Inner {
     blobs: BlobStore,
     secrets: Aes256Gcm,
     handshakes: RwLock<HashMap<String, PendingHandshake>>,
-    ws_tokens: RwLock<HashMap<String, (Auth, Instant)>>,
     password_slots: Arc<Semaphore>,
     changes: broadcast::Sender<Uuid>,
     shutdown: watch::Sender<bool>,
@@ -95,7 +93,6 @@ impl App {
             blobs,
             secrets: Aes256Gcm::new(master_key.into()),
             handshakes: RwLock::new(HashMap::new()),
-            ws_tokens: RwLock::new(HashMap::new()),
             password_slots: Arc::new(Semaphore::new(4)),
             changes,
             shutdown,
@@ -292,44 +289,57 @@ impl App {
                 auth.principal.tenant_id,
             )
             .await?;
-        self.0
-            .ws_tokens
-            .write()
-            .await
-            .retain(|_, (a, _)| a.from_id != auth.from_id);
         let _ = self.0.changes.send(auth.principal.user_id);
         Ok(())
     }
 
     pub async fn websocket_token(&self, auth: &Auth) -> Result<String> {
-        let mut tokens = self.0.ws_tokens.write().await;
-        tokens.retain(|_, (_, expiry)| *expiry > Instant::now());
-        if tokens.len() >= MAX_WS_TICKETS {
-            return Err(Error::Unavailable);
-        }
+        let auth = self.authenticate(&auth.from_id).await?;
         // Native clients append this ticket directly as one URL path segment.
         let mut random = Zeroizing::new(vec![0u8; 32]);
         OsRng.fill_bytes(&mut random);
         let token = URL_SAFE_NO_PAD.encode(&random);
-        tokens.insert(
-            token.clone(),
-            (auth.clone(), Instant::now() + Duration::from_secs(60)),
-        );
+        let token_hash = sessions::token_hash(&token);
+        let sealed = self.seal_websocket_credential(&token_hash, &auth)?;
+        self.0
+            .repository
+            .create_websocket_ticket(
+                &token_hash,
+                auth.principal.user_id,
+                auth.principal.tenant_id,
+                &sealed,
+            )
+            .await?;
         Ok(token)
     }
 
     pub async fn websocket_auth(&self, token: &str) -> Result<Auth> {
-        let (auth, expires) = self
-            .0
-            .ws_tokens
-            .write()
-            .await
-            .remove(token)
-            .ok_or(Error::Unauthorized)?;
-        if expires <= Instant::now() {
+        if token.len() != 43
+            || !token
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+        {
             return Err(Error::Unauthorized);
         }
-        self.authenticate(&auth.from_id).await
+        let token_hash = sessions::token_hash(token);
+        let ticket = self
+            .0
+            .repository
+            .consume_websocket_ticket(&token_hash)
+            .await?
+            .ok_or(Error::Unauthorized)?;
+        let from = self.open_websocket_credential(
+            &token_hash,
+            ticket.user_id,
+            ticket.tenant_id,
+            &ticket.credential_sealed,
+        )?;
+        let auth = self.authenticate(&from).await?;
+        if auth.principal.user_id != ticket.user_id || auth.principal.tenant_id != ticket.tenant_id
+        {
+            return Err(Error::Unauthorized);
+        }
+        Ok(auth)
     }
 
     pub async fn provision_user(

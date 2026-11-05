@@ -19,7 +19,8 @@ PostgreSQL together with blob storage and the server master key before upgrades.
 ## Integrity and isolation
 
 Users belong to tenants. Composite foreign keys on chat memberships, chat
-creators, assets, integrations, authenticated sessions and directory memberships
+creators, assets, integrations, authenticated sessions, WebSocket tickets and
+directory memberships
 reject relationships between tenants. Chats are locked before mutations. Only
 conversation members read messages and shared attachment metadata. Conversation
 metadata and administrative membership changes require an administrator.
@@ -60,6 +61,14 @@ not decrypt it. Passwords are password hashes. Database errors are mapped to
 application errors; submitted values and SQL diagnostics are not returned or
 logged.
 
+Administrative shutdown, crash shutdown and recovery-in-progress SQLSTATEs map
+to temporary unavailability (HTTP 503). A terminated in-flight query does not
+require restarting the application; the pool can reconnect for later requests.
+The interruption test locks its own profile row, observes the blocked backend,
+terminates that backend and checks both rollback and a later successful write.
+It does not establish whether an arbitrary connection loss happened before or
+after a commit. Message retries should preserve their original idempotency key.
+
 ## Authenticated human sessions
 
 `authenticated_sessions` stores a SHA-256 hash of the human `From` token as its
@@ -80,13 +89,35 @@ notifications. Single-use WebSocket tickets reauthenticate their underlying
 credential when consumed.
 
 Pending login handshakes live only in process memory for 120 seconds, with
-capacity 4,096 and at most five login attempts each. Single-use WebSocket tickets
-live there for 60 seconds, with capacity 4,096. These two maps are lost on restart.
+capacity 4,096 and at most five login attempts each. They are lost on restart.
 Authenticated database session records have no per-user or global quota.
 Expired and revoked records remain until explicit operator cleanup; automatic
 pruning, renewal and a device/session-management API are not implemented. A
 restored backup can restore pre-revocation state; see the explicit recovery
 policy in [operations](operations.md#backup-and-restore).
+
+## Single-use WebSocket tickets
+
+Migration `0010_websocket_tickets.sql` stores a SHA-256 ticket digest, a tenant-bound
+owner, sealed credential bytes and an expiry. The URL-safe random token stays
+43 characters long. The credential uses an AES-256-GCM `HWT1` envelope with its
+own associated-data domain bound to the digest, tenant and user. Raw tickets,
+raw `From` credentials and session keys are not stored in this table. A service
+instance with the same database and master key can consume another instance's
+ticket, including after the issuer restarts, within its original lifetime.
+
+Issuance sets a fixed 60-second lifetime using PostgreSQL time. A transaction
+serializes issuance with a table lock, removes expired rows and enforces a
+global maximum of 4,096 pending tickets; sealed payloads are also size bounded.
+Atomic `DELETE ... RETURNING` allows exactly one consumer, and an expired row
+never yields credentials. Consumption opens the envelope and reauthenticates
+the original credential against current session expiry and revocation. Logout
+therefore invalidates an unused ticket on every instance. Expired rows are
+removed on issuance or attempted consumption.
+
+An operator restore can resurrect a previously consumed ticket while its
+original expiry is still in the future. Discard pending tickets before opening
+restored traffic, as described in [recovery](operations.md#backup-and-restore).
 
 ## Durable events and bounds
 

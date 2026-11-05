@@ -411,6 +411,24 @@ async fn websocket_sdk_binary_subscription_and_real_message_delivery() {
     ws.send(Message::Binary(subscribe.into_bytes().into()))
         .await
         .unwrap();
+    // The socket and HTTP request use separate connections. Only the encrypted
+    // acknowledgment establishes that the server applied this subscription.
+    let acknowledgment = tokio::time::timeout(Duration::from_secs(5), ws.next())
+        .await
+        .expect("SDK subscription acknowledged before posting a message")
+        .unwrap()
+        .unwrap();
+    assert!(acknowledgment.is_binary());
+    let acknowledgment: Value = serde_json::from_slice(
+        &key.decrypt_base64(std::str::from_utf8(&acknowledgment.into_data()).unwrap())
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(acknowledgment["type"], "subscribed");
+    assert_eq!(
+        acknowledgment["message_types"],
+        json!(["chat_message", "chat_update"])
+    );
     let sent=server.call(&a,Method::POST,"/t",Some(json!({"tid":tid,"msg":key.encrypt_base64(b"live message").unwrap(),"cid":Uuid::new_v4()}))).await;
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {

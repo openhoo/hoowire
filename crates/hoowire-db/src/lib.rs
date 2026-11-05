@@ -11,8 +11,10 @@ mod messages;
 mod preferences;
 mod resources;
 mod sessions;
+mod websocket_tickets;
 pub use avatars::{AvatarInfo, AvatarRecord};
 pub use sessions::AuthenticatedSession;
+pub use websocket_tickets::WebsocketTicket;
 
 use std::{collections::BTreeSet, time::Duration};
 
@@ -54,6 +56,13 @@ fn db_error(error: sqlx::Error) -> Error {
             Error::Invalid("relationship or constraint violation".into())
         }
         sqlx::Error::PoolTimedOut | sqlx::Error::PoolClosed | sqlx::Error::Io(_) => {
+            Error::Unavailable
+        }
+        sqlx::Error::Database(ref db)
+            if matches!(db.code().as_deref(), Some("57P01" | "57P02" | "57P03")) =>
+        {
+            // Administrative/crash shutdown and recovery are availability
+            // failures. In-flight statements must not look like code errors.
             Error::Unavailable
         }
         sqlx::Error::Database(ref db)

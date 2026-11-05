@@ -105,6 +105,42 @@ test_user=$(docker run --rm --network "$network_id" --read-only \
     "$test_image" create-user --tenant "$test_tenant" \
     --email image-check@example.test --first-name Image)
 [[ "$test_user" =~ ^[0-9a-f-]{36}$ ]]
+# Exercise the ticket repository's actual lock and consume statements with the
+# documented runtime role. These bytes are synthetic SQL fixtures, not usable
+# credentials. Keep both the consumed and unconsumed fixtures in a rollback.
+ticket_permission_result=$(docker exec -i \
+    --env PGPASSWORD=runtime-disposable-local-only "$postgres_id" \
+    psql -X -w -h 127.0.0.1 -U hoowire_runtime -d hoowire \
+    -v ON_ERROR_STOP=1 -v test_user="$test_user" -v test_tenant="$test_tenant" \
+    -qAt <<'SQL'
+SELECT current_user='hoowire_runtime' AND NOT rolsuper FROM pg_roles WHERE rolname=current_user;
+BEGIN;
+LOCK TABLE websocket_tickets IN SHARE ROW EXCLUSIVE MODE;
+INSERT INTO websocket_tickets(token_hash,user_id,tenant_id,credential_sealed,expires_at)
+VALUES(decode(repeat('ab',32),'hex'),:'test_user'::UUID,:'test_tenant'::UUID,
+       decode('00112233','hex'),clock_timestamp()+interval '60 seconds');
+WITH consumed AS (
+    DELETE FROM websocket_tickets WHERE token_hash=decode(repeat('ab',32),'hex')
+    RETURNING user_id,tenant_id,credential_sealed,expires_at
+)
+SELECT count(*)=1 AND bool_and(user_id=:'test_user'::UUID
+    AND tenant_id=:'test_tenant'::UUID AND credential_sealed=decode('00112233','hex'))
+FROM consumed WHERE expires_at>clock_timestamp();
+WITH consumed AS (
+    DELETE FROM websocket_tickets WHERE token_hash=decode(repeat('ab',32),'hex')
+    RETURNING user_id,tenant_id,credential_sealed,expires_at
+)
+SELECT count(*)=0 FROM consumed WHERE expires_at>clock_timestamp();
+INSERT INTO websocket_tickets(token_hash,user_id,tenant_id,credential_sealed,expires_at)
+VALUES(decode(repeat('ac',32),'hex'),:'test_user'::UUID,:'test_tenant'::UUID,
+       decode('00112233','hex'),clock_timestamp()+interval '60 seconds');
+ROLLBACK;
+SELECT count(*)=0 FROM websocket_tickets
+WHERE token_hash IN (decode(repeat('ab',32),'hex'),decode(repeat('ac',32),'hex'));
+SQL
+)
+[[ "$ticket_permission_result" = $'t\nt\nt\nt' ]]
+printf 'WebSocket ticket runtime grants passed: table lock, insert, atomic consume, single use and rollback.\n'
 test_group=$(docker run --rm --network "$network_id" --read-only \
     --env DATABASE_URL=postgres://hoowire_runtime:runtime-disposable-local-only@postgres:5432/hoowire?sslmode=disable \
     "$test_image" create-directory --tenant "$test_tenant" \
@@ -160,4 +196,4 @@ shutdown_exit=$(docker inspect --format '{{.State.ExitCode}}' "$server_id")
 [[ "$shutdown_exit" = 0 ]]
 docker rm "$server_id" >/dev/null
 server_id=''
-printf '\nImage checks passed: nonroot, CA bundle, bounded migration CLI, provisioning, migration owner, restricted runtime role, read-only serving, health endpoints and graceful shutdown.\n'
+printf '\nImage checks passed: nonroot, CA bundle, bounded migration CLI, provisioning, migration owner, restricted runtime role, WebSocket ticket lock/insert/consume, read-only serving, health endpoints and graceful shutdown.\n'

@@ -80,8 +80,11 @@ Authenticated human sessions live in PostgreSQL with a one-hour expiry checked
 against database time on every authentication. Only the `From` token hash is
 stored; the transport key is sealed by the master key and bound to the token,
 tenant and user. Logout persists revocation and emits a transactional wake-up.
-Open login handshakes and single-use WebSocket tickets remain in process memory,
-expire after 120 and 60 seconds respectively, and are lost on restart. Persisted
+Single-use WebSocket tickets also live in PostgreSQL. Their token hashes index
+master-key-sealed credentials bound to the hash, tenant and user; atomic
+consumption and database-time expiry apply across processes. Open login
+handshakes remain in process memory, expire after 120 seconds and are lost on
+restart. Persisted
 messages, memberships, assets, event cursors and unexpired authenticated sessions
 survive restart. SDK integration credentials remain in PostgreSQL as sealed
 envelopes.
@@ -89,8 +92,8 @@ envelopes.
 The initial deployment target is a single service instance. Multiple instances
 would need shared asset storage with the required immutable publication
 semantics, the same master key, and routing affinity while completing a login
-handshake or consuming a process-local WebSocket ticket. Authenticated human
-sessions and their revocation are shared through PostgreSQL. Shared database
+handshake. Authenticated human sessions, WebSocket tickets and revocation are
+shared through PostgreSQL. Shared database
 state and notifications alone do not qualify a multi-instance deployment.
 
 ## Graceful shutdown
@@ -119,8 +122,8 @@ complete Teamwire parity or production readiness. Refer to the
 
 Release builds use thin LTO, one code generation unit, stripped symbols and
 abort-on-panic. Work is asynchronous; HTTP operations, uploads, password workers,
-WebSockets, handshake maps, ticket maps and the application broadcast channel
-have explicit capacity bounds. The SQLx connection pool is bounded, while
+WebSockets, the handshake map, pending database tickets and the application
+broadcast channel have explicit capacity bounds. The SQLx connection pool is bounded, while
 `PgListener` internally buffers notifications in an unbounded channel. Idle
 WebSockets share one database listener. Throughput, latency and memory
 under load require a reproducible benchmark. The separate

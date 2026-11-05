@@ -63,6 +63,38 @@ empty. Existing volumes retain their `pg_hba.conf`; review their host rules
 explicitly when adopting this configuration. The healthcheck receives its
 password through `PGPASSWORD` and emits no query or diagnostic output.
 
+### Automated Compose smoke test
+
+Build the image, then test the documented development configuration:
+
+```sh
+docker build -t hoowire:local .
+./scripts/test-compose.sh hoowire:local
+```
+
+The script needs Bash, Git, curl, Docker and Docker Compose with `up --wait`
+support. It uses the repository's `compose.yaml`, a unique project name, new
+named volumes, a dynamic port on `127.0.0.1` and privately generated credentials.
+It ignores the checkout's `.env` and the caller's HooWire credentials. The
+optional image argument must select an image already present in the local
+Docker daemon; the script does not build or publish an image.
+
+Checks cover required secret interpolation, refusal to serve an unmigrated
+database, explicit migration, CLI provisioning of a tenant, human account,
+bot, directory group and role, plus integration credentials in a new private
+file. The test verifies that an existing credential file is preserved when a
+second provisioning command fails. Serving checks include live and ready
+endpoints, the nonroot user, a read-only root filesystem, dropped capabilities,
+and the writable asset volume. It stops and removes the containers while
+preserving volumes, recreates them without another migration, and verifies
+the account/directory records and a synthetic asset-volume file. Both server
+stops must exit successfully after SIGTERM.
+
+On exit, the script removes its own containers, network, named volumes and
+temporary credentials. It leaves the selected image in the local daemon. This
+test uses no Teamwire SDK or application and establishes the Compose lifecycle;
+encrypted client workflows have their own [test layers](testing.md).
+
 ## Provision accounts
 
 Provisioning is a trusted local operator action. There is no public registration
@@ -287,11 +319,13 @@ timeout returns an error. Compose sends SIGTERM and allows 40 seconds before
 forced termination. Verify shutdown with the actual long-lived clients used
 in your environment.
 Authenticated human sessions survive restart until their original one-hour
-expiry if the same PostgreSQL data and master key are available. Open login
-handshakes and unused single-use WebSocket tickets are process-local and are
-lost on restart. Clients reconnect and obtain a new WebSocket ticket; an expired
-login session requires authentication again. Durable event cursors and messages
-remain in PostgreSQL.
+expiry if the same PostgreSQL data and master key are available. Unused
+single-use WebSocket tickets are shared through PostgreSQL and remain usable
+for their original 60-second lifetime, including at a different instance. Open
+login handshakes are process-local and are lost on restart; completing one
+still requires routing affinity. Clients obtain a fresh ticket after its expiry;
+an expired login session requires authentication again. Durable event cursors
+and messages remain in PostgreSQL.
 
 ## Backup and restore
 
@@ -329,18 +363,26 @@ opening traffic. To require fresh human logins, revoke restored sessions with
 the migration owner in the isolated restored database:
 
 ```sql
+-- Always discard short-lived upgrade credentials from a restored snapshot.
+DELETE FROM websocket_tickets;
+
+-- Apply when the recovery policy requires fresh human authentication.
 UPDATE authenticated_sessions
 SET revoked_at = clock_timestamp()
 WHERE revoked_at IS NULL;
 ```
 
-Run this before starting the restored service. Integration credentials are
+Discard pending tickets before starting a restored service; a snapshot can
+otherwise resurrect a previously consumed ticket within its original expiry.
+Apply the human-session revocation according to the selected recovery policy.
+Integration credentials are
 separate from these human session records. Expired and revoked session rows
 are retained until explicit operator cleanup; there is no automatic pruning
 or configurable per-user/global session quota.
 
 Do not rotate the master key by replacing the environment variable. Stored
-conversation, integration and human session envelopes require the existing key.
+conversation, integration, human session and pending ticket envelopes require
+the existing key.
 A re-encryption migration is needed for key rotation; no automatic rotation
 command is provided.
 Keep obsolete assets and historical events until an explicit retention policy

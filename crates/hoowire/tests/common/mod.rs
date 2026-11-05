@@ -68,6 +68,7 @@ impl Drop for OwnedChild {
 /// Own this test's server and asset path, including on assertion failure.
 pub struct ServerProcess {
     process: Option<OwnedChild>,
+    owns_data: bool,
     pub data: PathBuf,
     pub database_url: String,
     pub address: SocketAddr,
@@ -80,6 +81,7 @@ impl ServerProcess {
         let address = reservation.local_addr().unwrap();
         Self {
             process: None,
+            owns_data: true,
             data: std::env::temp_dir().join(format!("hoowire-process-{}", Uuid::new_v4())),
             database_url: std::env::var("HOOWIRE_TEST_DATABASE_URL")
                 .expect("isolated PostgreSQL URL required"),
@@ -90,6 +92,16 @@ impl ServerProcess {
                 .build()
                 .unwrap(),
         }
+    }
+
+    /// Borrow another fixture's asset path; its owner must outlive this peer.
+    pub fn share_data_from(&mut self, owner: &Self) {
+        assert!(
+            self.process.is_none(),
+            "share assets before starting a peer"
+        );
+        self.data = owner.data.clone();
+        self.owns_data = false;
     }
 
     pub fn command(&self) -> Command {
@@ -187,6 +199,8 @@ impl Drop for ServerProcess {
     fn drop(&mut self) {
         // Stop the child before removing files it may still use.
         drop(self.process.take());
-        let _ = std::fs::remove_dir_all(&self.data);
+        if self.owns_data {
+            let _ = std::fs::remove_dir_all(&self.data);
+        }
     }
 }
