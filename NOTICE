@@ -1,0 +1,13 @@
+HooWire
+Copyright 2026 OpenHoo contributors
+
+HooWire is independent software written in Rust. It targets interoperability
+with selected Teamwire SDK and API versions. It is not affiliated with or
+endorsed by Teamwire GmbH.
+
+Teamwire is a trademark of its respective owner. The Teamwire SDK, applications,
+credentials, binaries and documentation are not included in this distribution.
+Their availability and terms are separate from HooWire's Apache-2.0 license.
+
+Rust dependencies retain their own licenses. Cargo.lock records the resolved
+dependency versions; each dependency's package contains its license notices.

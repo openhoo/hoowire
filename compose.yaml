@@ -1,0 +1,57 @@
+name: hoowire
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: hoowire
+      POSTGRES_DB: hoowire
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      POSTGRES_PASSWORD: ${HOOWIRE_DB_PASSWORD:?Set HOOWIRE_DB_PASSWORD in .env}
+      PGPASSWORD: ${HOOWIRE_DB_PASSWORD:?Set HOOWIRE_DB_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          psql -X -w -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+          -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' >/dev/null 2>&1
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    restart: unless-stopped
+
+  hoowire:
+    image: hoowire:local
+    build:
+      context: .
+    command: ["serve"]
+    environment:
+      DATABASE_URL: postgres://hoowire:${HOOWIRE_DB_PASSWORD:?Set HOOWIRE_DB_PASSWORD in .env}@postgres:5432/hoowire?sslmode=disable
+      HOOWIRE_MASTER_KEY: ${HOOWIRE_MASTER_KEY:?Generate HOOWIRE_MASTER_KEY with hoowire keygen}
+      HOOWIRE_BIND: 0.0.0.0:8080
+      HOOWIRE_DATA_DIR: /data/assets
+      HOOWIRE_DB_MAX_CONNECTIONS: ${HOOWIRE_DB_MAX_CONNECTIONS:-10}
+      HOOWIRE_MIGRATION_STATEMENT_TIMEOUT_SECS: ${HOOWIRE_MIGRATION_STATEMENT_TIMEOUT_SECS:-300}
+      HOOWIRE_CORS_ALLOW_DESKTOP: ${HOOWIRE_CORS_ALLOW_DESKTOP:-true}
+      HOOWIRE_CORS_WEB_ORIGINS: ${HOOWIRE_CORS_WEB_ORIGINS:-}
+      RUST_LOG: ${RUST_LOG:-hoowire=info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${HOOWIRE_PORT:-8080}:8080"
+    volumes:
+      - assets:/data/assets
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 256
+    stop_grace_period: 40s
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  assets:

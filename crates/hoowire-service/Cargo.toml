@@ -1,0 +1,31 @@
+[package]
+name = "hoowire-service"
+description = "HooWire application services and authorization boundary"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+hoowire-domain.workspace = true
+hoowire-db.workspace = true
+hoowire-crypto.workspace = true
+hoowire-blob.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+hex.workspace = true
+base64.workspace = true
+rand.workspace = true
+zeroize.workspace = true
+tracing.workspace = true
+argon2 = "0.5"
+aes-gcm = "0.10"
+
+[dev-dependencies]
+sqlx.workspace = true
+
+[lints]
+workspace = true

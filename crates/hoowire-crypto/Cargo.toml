@@ -1,0 +1,22 @@
+[package]
+name = "hoowire-crypto"
+description = "Legacy Teamwire transport cryptography and ephemeral session handshakes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+aes = { version = "0.8.4", features = ["zeroize"] }
+base64.workspace = true
+cbc = { version = "0.1.2", features = ["alloc", "zeroize"] }
+hex.workspace = true
+k256 = { version = "0.13.4", default-features = false, features = ["ecdh", "std"] }
+rand.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+zeroize.workspace = true
+
+[lints]
+workspace = true

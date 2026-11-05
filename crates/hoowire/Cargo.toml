@@ -1,0 +1,32 @@
+[package]
+name = "hoowire"
+description = "Independent Rust collaboration server targeting Teamwire API20 compatibility"
+default-run = "hoowire"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+hoowire-domain.workspace = true
+hoowire-db.workspace = true
+hoowire-service.workspace = true
+hoowire-api.workspace = true
+hoowire-blob.workspace = true
+tokio.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+base64.workspace = true
+uuid.workspace = true
+serde_json.workspace = true
+zeroize.workspace = true
+
+[dev-dependencies]
+hoowire-crypto.workspace = true
+futures-util.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+tokio-tungstenite = "0.29"
+
+[lints]
+workspace = true

@@ -1,0 +1,18 @@
+[package]
+name = "hoowire-blob"
+description = "Bounded immutable asset storage for HooWire"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+hoowire-domain.workspace = true
+tokio.workspace = true
+sha2.workspace = true
+hex.workspace = true
+uuid.workspace = true
+tracing.workspace = true
+
+[lints]
+workspace = true

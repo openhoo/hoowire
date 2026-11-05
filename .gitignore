@@ -1,0 +1,15 @@
+/target/
+/data/
+/.env
+/.env.*
+!/.env.example
+/secrets/
+*.key
+*.pem
+*.p12
+*.pfx
+*.kdbx
+/.venv/
+__pycache__/
+*.pyc
+/artifacts/

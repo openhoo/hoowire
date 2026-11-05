@@ -1,0 +1,8 @@
+# The SDK is proprietary and is not redistributed in this repository.
+# Download the official Teamwire SDK 2.0.0 archive independently, then install
+# its wheel for the Python minor version in use (3.11, 3.12 or 3.13):
+#
+#   python -m pip install /absolute/path/to/teamwire_api-2.0.0-py311-none-any.whl
+#
+# The wheel declares and pins the SDK's runtime dependencies.
+# sdk_conformance.py itself uses only the Python standard library plus that SDK.

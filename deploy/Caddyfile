@@ -1,0 +1,8 @@
+# Run Caddy on the same private container network as HooWire.
+# Set HOOWIRE_DOMAIN to a public DNS name resolving to the proxy.
+{$HOOWIRE_DOMAIN} {
+	request_body {
+		max_size 25165824
+	}
+	reverse_proxy hoowire:8080
+}

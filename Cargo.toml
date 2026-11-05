@@ -1,0 +1,49 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.93"
+license = "Apache-2.0"
+authors = ["OpenHoo contributors"]
+repository = "https://github.com/openhoo/hoowire"
+
+[workspace.dependencies]
+hoowire-domain = { path = "crates/hoowire-domain" }
+hoowire-db = { path = "crates/hoowire-db" }
+hoowire-crypto = { path = "crates/hoowire-crypto" }
+hoowire-service = { path = "crates/hoowire-service" }
+hoowire-api = { path = "crates/hoowire-api" }
+hoowire-blob = { path = "crates/hoowire-blob" }
+axum = { version = "0.8.9", features = ["ws", "multipart"] }
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "net", "signal", "fs", "io-util", "sync", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono", "json", "migrate", "macros"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+sha2 = "0.10"
+base64 = "0.22"
+hex = "0.4"
+rand = "0.8"
+zeroize = { version = "1", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
+futures-util = "0.3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+panic = "abort"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"

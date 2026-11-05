@@ -1,0 +1,37 @@
+[package]
+name = "hoowire-api"
+description = "Teamwire API20 HTTP and WebSocket transport adapter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+hoowire-domain.workspace = true
+hoowire-service.workspace = true
+hoowire-crypto.workspace = true
+hoowire-blob.workspace = true
+axum.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+hex.workspace = true
+tracing.workspace = true
+futures-util.workspace = true
+url = "2"
+multer = "3"
+tower-http = { version = "0.6.11", default-features = false, features = ["cors"] }
+
+[dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+tokio-tungstenite = "0.29"
+hoowire-db.workspace = true
+base64.workspace = true
+k256 = { version = "0.13", features = ["ecdh"] }
+rand.workspace = true
+sha2.workspace = true
+zeroize.workspace = true
+
+[lints]
+workspace = true

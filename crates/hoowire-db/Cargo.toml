@@ -1,0 +1,22 @@
+[package]
+name = "hoowire-db"
+description = "Transactional PostgreSQL persistence and durable per-user event streams"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+hoowire-domain.workspace = true
+sqlx.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true
