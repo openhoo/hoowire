@@ -1,12 +1,82 @@
 # Runtime measurements
 
-Reviewed November 5, 2026. These observations describe one local Linux ARM64
-release artifact and one idle container sample. Throughput, latency, sustained
-load and memory growth with connected clients remain unmeasured.
+Reviewed November 5, 2026. These observations describe local Linux ARM64
+release artifacts and bounded idle container samples. Throughput, latency,
+sustained load and memory growth with connected clients remain unmeasured.
 
-## Current artifact and environment
+## Qualification after shared WebSocket tickets — November 5, 2026
 
-The current image qualification passed on November 5, 2026 in Europe/Berlin.
+This later qualification includes the shared, sealed WebSocket-ticket storage
+and migration `0010`. The image smoke and the separate Compose lifecycle smoke
+both passed. Earlier measurements below retain their original artifact and
+source identities.
+
+| Item | Observed value |
+| --- | --- |
+| Local image tag | `hoowire:smoke-20261105` |
+| Target and toolchain | `linux/arm64`, GNU libc, Rust `1.93.1` |
+| Image smoke started | `2026-11-05T06:16:49Z` |
+| Compose smoke started | `2026-11-05T06:17:19Z` |
+| Test database | Separate disposable PostgreSQL `17.11` instances |
+| Executable size | **5,972,048 bytes** / **5.70 MiB** |
+| Uncompressed image size | **103,452,114 bytes** / **98.66 MiB** |
+| Single Docker memory display | `1.754MiB / 15.66GiB` |
+| Single Docker CPU / PIDs display | `0.00%` / `18` |
+| Idle SIGTERM | Exit `0` within the configured 40-second grace |
+
+```text
+image_id=sha256:0e46cda1898913d3436c56d956986027db713864b3f437a4eae4be50e30ad24a
+linux_release_binary_sha256=6fd4a05ed6325a6fa2e8914626134f115baf9ebaeb15f3679439faaaf1ab58c4
+source_freeze_sha256=5bfdfb8a2ce102834812d2aa1403ede070f9c2bf43cf84c3210013b99e467e0b
+build_inputs_sha256=8430e88e0a59f536fa0bfa4fd9fdb95ce98d1e0c232be20e5029255620743321
+copy_inputs_sha256=b36c78c17cabc2c31d98b14133ecf646874f9c4224739f9099f91d0fb8bccdd5
+image_check_script_sha256=326f32ca8a670d2e3784c9c2650a24b49e9ab00ea06e52e483ab7f9711a402b5
+compose_check_script_sha256=8f571f65fed9c492711e982719cfa54fe0155527b341d36c4d08f1634685f1e6
+```
+
+The full source-and-fixture freeze contains 78 files using
+[source_manifest.py](../tests/source_manifest.py). The separate build-input
+inventory contains 73 files: 71 Docker `COPY` inputs plus `Dockerfile` and
+`.dockerignore`. Both inventories matched before and after qualification;
+every build input also matched immediately after the Docker build. Their
+digest format is described in the earlier qualification below. Image identity,
+configuration, filesystem-layer identities and the extracted executable hash
+matched before and after both smoke tests.
+
+The frozen build inputs and both check scripts were also verified byte for
+byte against commit `86dbe5b4140174bfd24a19cccfed21f0ca37aab9`.
+
+The image test additionally exercised `websocket_tickets` using an authenticated
+TCP connection as the nonsuperuser `hoowire_runtime` role with the documented
+grants. It acquired the repository's `SHARE ROW EXCLUSIVE` table lock, inserted
+a synthetic ticket, executed the atomic `DELETE ... RETURNING` consumption CTE,
+verified that a repeated consume returned no row, and rolled back both consumed
+and unconsumed fixtures. The sealed dummy bytes in this SQL check are not usable
+authentication material; service and process tests qualify actual tickets.
+
+The [Compose smoke](../scripts/test-compose.sh) passed all eight named check
+groups. It used private generated credentials, a unique project, new volumes
+and a dynamically allocated loopback port. Explicit migration and CLI
+provisioning produced a tenant, human, bot, integration and directory entries.
+These records and a synthetic asset-volume marker survived container removal
+and recreation. Both server stops exited `0`. The image and Compose checks
+removed their own containers and networks; Compose also removed its named
+volumes and temporary credentials. Neither check used an SDK or vendor app.
+
+The single idle observation again had no connected clients, WebSockets, active
+login sessions, messages or conversations. PostgreSQL ran separately. The
+ticket SQL fixtures had been rolled back before the observation. This is a
+Docker container-memory display, with the same measurement limits described
+below; it is not a load or regression benchmark.
+
+Local ignored reports `artifacts/image-smoke-20261105.json` and
+`artifacts/compose-smoke-20261105.json` retain input manifests, image and binary
+hashes, driver hashes and log references. They qualify this local artifact and
+do not represent a hosted CI result or complete client compatibility.
+
+## Earlier artifact and environment — November 5, 2026
+
+The earlier image qualification passed on November 5, 2026 in Europe/Berlin.
 Its recorded UTC timestamps fall on November 4, 2026 because the run occurred
 after midnight locally. The image contains the explicit WebSocket-task drain;
 the image smoke used an idle server with no active WebSockets or SDK clients.
@@ -130,7 +200,7 @@ The smoke does not establish production readiness or complete SDK compatibility.
 
 The earlier qualification on November 4, 2026 is retained in the local,
 unpublished `artifacts/image-qualification/2026-11-04-05f7130f20af/` directory.
-The current artifact directory also retains the preceding version of this
+The November 5 qualification directory also retains the preceding version of this
 document as `previous-runtime-measurements.md`.
 
 ```text

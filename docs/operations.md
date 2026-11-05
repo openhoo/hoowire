@@ -417,13 +417,31 @@ executable and checks integration authentication, unsealed conversation keys,
 downloaded attachment and avatar bytes, recovered human-session authentication,
 subsequent logout revocation and the pre-backup message in the durable feed.
 
-A run on **5 November 2026** (Europe/Berlin) passed against PostgreSQL **17.11**, with nine
-migrations and matching counts for all 23 public tables. The generated local
-`artifacts/recovery-drill.json` records source and executable hashes, fixture
-counts and individual checks. The test always removes its own containers and
-temporary files, including the synthetic master key and credential file.
-This run used the same frozen source and executable as the
-[recorded Rust/SDK checks](testing.md#recorded-local-run-november-5-2026).
+The later run on **5 November 2026, 06:27:34–06:27:46 UTC**
+(**07:27:34–07:27:46 Europe/Berlin**) passed against PostgreSQL **17.11**,
+with ten migrations and matching counts for all **24 public tables**. It used
+Python **3.11.15** and `cryptography==50.0.0` installed in a new private virtual
+environment. The recovery-only pin was updated after GitHub reported four
+advisories against its previous version; the new pin is outside all four
+reported vulnerable ranges. The separate external SDK environment was preserved.
+
+Local ignored reports `artifacts/recovery-secure-smoke-20261105.json` and
+`artifacts/recovery-secure-smoke-20261105-verification.json` record the results,
+package provenance and cleanup. This run used the same 78-file source freeze
+and executable as the [recorded Rust/SDK checks](testing.md#recorded-local-run-november-5-2026).
+The recovery driver and dependency file are outside that manifest and were
+separately verified before and after the run:
+
+```text
+recovery_driver_sha256=2dd5a7cca6cfefe44b531d5b1f395c60ecafb38e57d800c76fee4eb34d605c14
+recovery_requirements_sha256=d2465f31a5a9d62553b258e7ce8650b44a3feb7e9fe36cf113aee8612b09f5a6
+```
+
+The preceding `recovery-smoke-20261105.json` and historical
+`recovery-drill.json` reports were preserved. The test removes its own
+containers and temporary files, including synthetic keys, credentials and
+the private executable copy. No WebSocket tickets were present in the fixture;
+this run does not qualify the pending-ticket invalidation policy above.
 
 The selected test policy preserves its synthetic human session through restore
 to verify encrypted-key recovery, then logs it out. Select the production

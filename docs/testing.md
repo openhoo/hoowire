@@ -14,32 +14,66 @@ tested. A test count is not a coverage percentage or a compatibility certificate
 
 ## Recorded local run: November 5, 2026
 
-The frozen source/fixture manifest contains 72 files with SHA-256
-`d8fe4652d00b97c0100a15898430f1cb8fdee891e331838363b37619b1ab3e7a`.
+The later smoke qualification includes migration `0010` and the shared
+WebSocket-ticket fixes in commit `86dbe5b4140174bfd24a19cccfed21f0ca37aab9`.
+The frozen source/fixture manifest contains 78 files with SHA-256
+`5bfdfb8a2ce102834812d2aa1403ede070f9c2bf43cf84c3210013b99e467e0b`.
 The executable used for the SDK and restore checks has SHA-256
-`3d876bf8a9635fd1c0eb1653eb72beab44f441a8c18e0c93f2c320b6cd00ba0a`.
+`552289f5dce21cb61f1207fb9521cd6aa0cb934d9702c261769f8e160232b63e`.
 The date here uses Europe/Berlin; the machine-readable reports use UTC.
 
 | Check | Recorded result |
 | --- | --- |
 | Formatting, all-target Clippy with warnings denied, debug build | Passed |
-| Default Rust suite without PostgreSQL | 35 passed, 56 database-dependent cases skipped |
-| Full Rust suite against disposable PostgreSQL 17.11 | 91 passed, zero failed or skipped; includes the eight executable process cases |
+| Default Rust suite without PostgreSQL | 35 passed, 70 database-dependent cases skipped |
+| Full Rust suite against disposable PostgreSQL 17.11 | 105 passed, zero failed or skipped; includes eleven executable process cases |
 | Unmodified external SDK 2.0.0, strict complete mode | 111 scenarios passed, one pre-HTTP SDK failure, one dependent scenario blocked; 84 methods attempted, 83 qualified; exit 1 |
 | Separate authenticated SDK WebSocket SIGTERM probe | Close 1001, peer close reply and server exit 0 |
-| Synthetic logical database/asset restore | All 23 table counts preserved, nine migrations accepted, recovered authentication, keys, bytes and replay checked |
+| Synthetic logical database/asset restore | All 24 table counts preserved, ten migrations accepted, recovered authentication, keys, bytes and replay checked; repeated successfully with recovery-only `cryptography==50.0.0` |
+| Final Linux ARM64 image | Passed, including authenticated restricted-runtime-role ticket SQL and idle shutdown |
+| Development Compose lifecycle | All eight check groups passed, including persistence across container recreation |
 
-The default and PostgreSQL totals overlap: 91 is the complete Rust total, not
-an additional 91 tests. No line or branch coverage percentage was measured.
+The default and PostgreSQL totals overlap: 105 is the complete Rust total, not
+an additional 105 tests. No line or branch coverage percentage was measured.
 The reference SDK failure is explained in [SDK evidence](sdk-compatibility.md).
 The image check has its own [artifact record](runtime-measurements.md); the
 native desktop result remains associated with its earlier source snapshot in
 [client evidence](client-contract.md).
 
 The local machine-readable reports are under the ignored `artifacts/`
-directory: `rust-verification-final.json`, `sdk-conformance-final.json`,
-`sdk-shutdown-smoke.json` and `recovery-drill.json`. They are not installed
+directory: `source-freeze-smoke-20261105.json`,
+`rust-verification-smoke-20261105.json`, `sdk-conformance-smoke-20261105.json`,
+`sdk-shutdown-smoke-20261105.json`, `recovery-smoke-20261105.json`,
+`recovery-secure-smoke-20261105.json`,
+`image-smoke-20261105.json` and `compose-smoke-20261105.json`. They are not installed
 runtime dependencies or a substitute for rerunning the suite on a new revision.
+
+The earlier 91-test run and SDK/restore results retain their 72-file source
+digest `d8fe4652d00b97c0100a15898430f1cb8fdee891e331838363b37619b1ab3e7a`.
+The earlier SDK/restore executable has digest
+`3d876bf8a9635fd1c0eb1653eb72beab44f441a8c18e0c93f2c320b6cd00ba0a`;
+the separately built Linux image executable has digest
+`167e5c39740c366002f9240932d6a7be61093fa71852441c091eb68a82a8a10f`.
+Their `*-final.json`, `sdk-shutdown-smoke.json` and `recovery-drill.json`
+reports were preserved; the new qualification uses separate report names.
+
+### Reproduced failures and regressions
+
+- The first public CI run intermittently timed out waiting for a WebSocket
+  event. The original test binary reproduced the failure on its seventh local
+  attempt. The test now decrypts and checks the subscription acknowledgement
+  before posting on a separate HTTP connection. Twenty subsequent repetitions
+  passed without increasing the timeout.
+- A new two-process E2E received HTTP `403` when redeeming a ticket on the
+  process that had not issued it. PostgreSQL now stores sealed ticket credentials
+  and atomically consumes their hashes. Repository, service and process tests
+  cover expiry, capacity, tampering, logout, issuer restart and concurrent
+  consumption. The two-process race requires exactly one `101` and one `403`.
+- Terminating the PostgreSQL backend of a confirmed blocked profile write
+  initially returned an internal error. Shutdown/recovery SQLSTATEs `57P01`,
+  `57P02` and `57P03` now map to service unavailable. The regression verifies
+  the classified error, unchanged original data, pool recovery and a later
+  successful write. It does not introduce automatic mutation retries.
 
 ## Test layers
 
@@ -48,9 +82,10 @@ runtime dependencies or a substitute for rerunning the suite on a new revision.
 | Rust tests without PostgreSQL | Rust unit tests, public crypto/domain/wire contracts, real temporary filesystem and selected CLI child processes | Validation, independent crypto vectors, serialization, immutable blob publication and early configuration rejection; no database-backed workflows |
 | PostgreSQL and service integration | Public repository/service APIs against real PostgreSQL | Transactions, tenant isolation, ACLs, optimistic versions, idempotency, durable events, resource expiry and authenticated sessions; no released client UI |
 | HTTP and WebSocket integration | Independent Rust drivers, real loopback HTTP/WS listeners, PostgreSQL and temporary assets | Encrypted wire requests, authentication, CORS, binary/text frames, access checks and selected protocol errors; not execution of the external SDK |
-| Executable E2E | The actual Cargo-built `hoowire` child process, PostgreSQL, public encrypted HTTP/WS and files | Configuration, explicit migration, human chat/file lifecycle, process restart, persistent revocation and SIGTERM close handshake; Unix-only, synthetic clients |
+| Executable E2E | The actual Cargo-built `hoowire` child processes, PostgreSQL, public encrypted HTTP/WS and files | Configuration, explicit migration, human chat/file lifecycle, process restart, cross-process tickets/events/revocation and SIGTERM close handshake; Unix-only, synthetic clients on one host |
 | External SDK | Independently installed, unmodified Teamwire Python SDK 2.0.0 and a disposable HooWire instance | The named scenarios and SDK methods in its JSON report; incomplete scenarios and the documented reference SDK failure remain visible |
 | Container image | An already built local image and an owned PostgreSQL container/internal network | Actual runtime filesystem, roles, CLI provisioning, read-only serving, health, idle shutdown and size observations; no active SDK/WebSocket clients in this script |
+| Development Compose | An already built image, the committed Compose file, owned project/network/volumes and disposable PostgreSQL | Explicit migration, human/bot/integration/directory provisioning, private credential files, read-only serving and persistence across container recreation; no SDK or released client |
 | Logical recovery | Actual executable, two fresh PostgreSQL containers, asset copy and an independent Python crypto driver | Quiesced synthetic dump/restore and recovered authentication/bytes/replay; no production PITR, host-loss or large-dataset qualification |
 | Historical native probe | Disclosed isolated Teamwire desktop 5.0.1 on macOS | Only the recorded workflows and source snapshot; not a rerunnable Cargo test, pristine-install qualification or mobile evidence |
 
@@ -134,7 +169,10 @@ cargo test -p hoowire-db --locked --test resources -- --ignored
 cargo test -p hoowire-db --locked --test adversarial -- --ignored
 cargo test -p hoowire-db --locked --test feed_cursors -- --ignored
 cargo test -p hoowire-db --locked --test pool_settings -- --ignored
+cargo test -p hoowire-db --locked --test availability -- --ignored
+cargo test -p hoowire-db --locked --test websocket_tickets -- --ignored
 cargo test -p hoowire-service --locked --test sessions -- --ignored
+cargo test -p hoowire-service --locked --test websocket_tickets -- --ignored
 cargo test -p hoowire-api --locked --test interoperability -- --ignored
 cargo test -p hoowire-api --locked --test cors -- --ignored
 cargo test -p hoowire-api --locked --test transport_failures -- --ignored
@@ -163,6 +201,7 @@ directory. Database-dependent cases need `HOOWIRE_TEST_DATABASE_URL` as above:
 ```sh
 cargo test -p hoowire --locked --test startup -- --include-ignored
 cargo test -p hoowire --locked --test lifecycle -- --ignored
+cargo test -p hoowire --locked --test operations -- --ignored
 cargo test -p hoowire --locked --test shutdown -- --ignored
 ```
 
@@ -179,6 +218,15 @@ process restarts. Logout remains revoked after another restart. A separate
 scenario checks other-user and cross-tenant requests through real HTTP.
 Migrations and tenant creation use CLI commands; account fixtures use the
 service provisioning API. This is not a released-client UI test.
+
+The [operations tests](../crates/hoowire/tests/operations.rs) start two owned
+server processes with the same database and asset directory. They check human
+login, bidirectional encrypted events and identical history across processes,
+remote logout invalidating HTTP, pending tickets and an idle WebSocket while a
+second session remains valid, and ticket consumption after issuer shutdown
+and restart. Concurrent upgrade requests must produce exactly one successful
+upgrade. These selected same-host scenarios do not qualify a complete cluster
+or routing setup; pending ECDH handshakes still need routing affinity.
 
 The [shutdown test](../crates/hoowire/tests/shutdown.rs) upgrades authenticated
 WebSockets, verifies encrypted subscription acknowledgements, sends SIGTERM to
@@ -231,6 +279,7 @@ Container checks require Docker and a built image, with no SDK installation:
 ```sh
 docker build --tag hoowire:local .
 ./scripts/test-image.sh hoowire:local
+./scripts/test-compose.sh hoowire:local
 ```
 
 The [image script](../scripts/test-image.sh) uses an owned internal network and
@@ -241,6 +290,14 @@ idle SIGTERM exit within a 40-second grace. It also prints artifact sizes and on
 Docker idle-memory/CPU/PIDs observation. That memory display is not process RSS,
 and no throughput or connected-client load is measured. Recorded observations
 and their exact artifact identities are in [runtime measurements](runtime-measurements.md).
+
+The [Compose script](../scripts/test-compose.sh) uses the committed development
+configuration with private generated secrets, a unique project, fresh volumes
+and a dynamic loopback port. Its eight groups check secret/schema failures,
+explicit migration, account/integration/directory provisioning, credential-file
+permissions and overwrite rejection, serving restrictions, persistent records
+and asset-volume bytes after recreation, SIGTERM and owned-resource cleanup.
+See [Compose operations](operations.md#automated-compose-smoke-test) for prerequisites.
 
 The logical restore drill additionally needs Python 3.11 or later and its
 separate crypto dependency:
@@ -260,6 +317,12 @@ keys, authentication, exact file bytes and durable replay. It writes
 `artifacts/recovery-drill.json`, then removes its own containers and temporary
 credentials/files. The synthetic session is preserved to verify recovery, then
 explicitly logged out. Production revocation policy is operator-selected.
+The later recorded run uses the separately installed recovery dependency
+`cryptography==50.0.0`; it preserves the SDK's vendor-declared dependencies.
+The recovery driver and requirement file have separate recorded hashes because
+the source/fixture manifest does not include them. See the recovery instructions
+for these identities and the retained historical reports. Its fixture contains
+no pending WebSocket tickets, so it does not test their restore invalidation.
 
 The drill uses operator database privileges. It does not qualify production
 backup scheduling, role restoration, PITR, host-loss recovery or recovery time

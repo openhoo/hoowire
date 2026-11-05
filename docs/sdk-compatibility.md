@@ -13,6 +13,11 @@ Reference archive SHA-256:
 866df082b99651c360fb94d3125a273aa08ca93915c0479b92a6707c21bde0a4
 ```
 
+The separately hashed Python 3.11 wheel used in the later qualification is
+`teamwire_api-2.0.0-py311-none-any.whl`, SHA-256
+`86297e08e0d1c34fcf30c7eda5c7a08be44cf8e93e62875dee8ee448914d100c`.
+The archive and wheel are different files and have different digests.
+
 The SDK is externally licensed and is not bundled in this repository. Test
 operators obtain and license their own copy. HooWire is an independent project;
 the name Teamwire is used to identify the intended interoperability target.
@@ -90,7 +95,51 @@ attribute to the parsed SDK object. The suite records this failure explicitly;
 it does not modify or monkey-patch the SDK to obtain a green report. Successful
 reaction creation, listing, and callbacks remain independently testable.
 
-## Recorded local integration run
+## Recorded integration run after shared tickets
+
+The qualification at **2026-11-05 06:21:06 UTC**
+(**2026-11-05 07:21:06 Europe/Berlin**) used the unmodified SDK 2.0.0 on
+Python 3.11.15 and the frozen server source containing migration `0010` and
+PostgreSQL-backed WebSocket tickets. It used a fresh disposable PostgreSQL
+17.11 database with authenticated TCP readiness, SCRAM-SHA-256 host rules and
+rejection of a wrong password. All optional scenarios and `--require-complete`
+were enabled:
+
+- **111 scenarios passed**, **one failed** and **one dependent readback was
+  blocked**. All **84 methods were attempted**, with **83 qualified**.
+- The only failed method remains `Chat.update_am_reaction`, which raises the
+  reference client's `AMReaction.id` attribute error before sending HTTP. The
+  suite preserved its strict exit code **1**.
+- The source/fixture manifest contained **78 files**. That manifest, the private
+  executable copy, all **32 installed SDK RECORD hashes**, and all **28 hashed
+  original files in the supplied wheel** matched before and after execution.
+
+The external SDK's declared dependency environment, including
+`cryptography==48.0.0`, was kept unchanged. The independent recovery driver was
+subsequently qualified in a separate environment with `cryptography==50.0.0`;
+neither Python environment is a dependency of the Rust server runtime.
+
+```text
+source_sha256: 5bfdfb8a2ce102834812d2aa1403ede070f9c2bf43cf84c3210013b99e467e0b
+binary_sha256: 552289f5dce21cb61f1207fb9521cd6aa0cb934d9702c261769f8e160232b63e
+```
+
+The separate authenticated aiohttp transport probe received HTTP **101**, the
+encrypted subscription acknowledgement and authenticated HTTP **200** before
+sending SIGTERM. It received **Close 1001** with reason `Server shutdown`,
+explicitly confirmed the peer close reply with automatic closing disabled,
+and observed server exit **0** in **0.002194 seconds**, within eight seconds.
+This probe is separate from executing SDK methods and from native app evidence.
+
+Local ignored reports are `artifacts/sdk-conformance-smoke-20261105.json`,
+`sdk-source-smoke-20261105.json`, `sdk-shutdown-smoke-20261105.json` and
+`sdk-cleanup-smoke-20261105.json`. The owned server, database container, private
+binary, fixture metadata and credentials were removed afterward. Earlier
+reports were preserved. This qualification covers Python 3.11 and the selected
+SDK scenarios; it does not renew the earlier desktop probe or qualify mobile,
+Python 3.12/3.13, older SDKs or complete Teamwire compatibility.
+
+## Earlier local integration run
 
 `artifacts/sdk-conformance-final.json` records the **2026-11-04 23:16:13 UTC**
 run (**2026-11-05 00:16:13 Europe/Berlin**) using the unmodified SDK 2.0.0 on
@@ -143,7 +192,7 @@ credentials, owned server process and PostgreSQL container were removed after
 the run.
 
 `artifacts/sdk-shutdown-smoke.json` and the identical
-`artifacts/shutdown-smoke.json` record the current independent aiohttp transport
+`artifacts/shutdown-smoke.json` record that earlier independent aiohttp transport
 probe against that same frozen executable. It completed HTTP **101**, received
 the authenticated subscription acknowledgement, and verified authenticated
 HTTP **200** immediately before sending SIGTERM to its owned process. The
@@ -158,7 +207,7 @@ and executable (`880e4104573b07d201c9a2b90706ee84f436e1eec6d985921fb997163b7ba6e
 The original probe observed a terminal client state before recording Close;
 bounded follow-up probes with an empty outbox and 64 queued messages later
 received Close on four peers and observed successful process exits. Those
-historical artifacts are not evidence for the current build, and the current
+historical artifacts are not evidence for the later build, and the later
 success does not erase the initial observation. Transport probes are separate
 from native application evidence. Python 3.12/3.13 and older SDKs were not
 executed in this run.

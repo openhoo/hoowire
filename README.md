@@ -31,6 +31,8 @@ Timestamp ETags map to persisted event positions. SDK retries use idempotency
 keys. Integration and conversation secrets are sealed with AES-256-GCM.
 Authenticated human sessions persist in PostgreSQL with hashed tokens and
 sealed transport keys; logout revocation is shared between instances.
+Single-use WebSocket tickets are also stored as hashes and sealed credentials
+in PostgreSQL, with atomic consumption across server processes.
 
 ## Start locally
 
@@ -95,8 +97,8 @@ integration tests, HTTP/WebSocket checks, Unix process E2E and a release build.
 See [testing](docs/testing.md) for focused commands, prerequisites and the
 evidence provided by each layer.
 
-The recorded local run on **November 5, 2026** passed **91 Rust tests**, including
-eight executable process E2E cases, against disposable PostgreSQL 17.11.
+The recorded local run on **November 5, 2026** passed **105 Rust tests**, including
+eleven executable process E2E cases, against disposable PostgreSQL 17.11.
 Formatting and Clippy with warnings denied also passed. The test report records
 the exact source snapshot and the separate SDK and native-client evidence.
 
@@ -105,6 +107,9 @@ the actual image with its own isolated PostgreSQL container and private network.
 It checks migration-owner/runtime grants, local provisioning, nonroot read-only
 serving, health endpoints and graceful shutdown, then removes its resources.
 It also prints image size, executable size and one bounded idle container sample.
+`./scripts/test-compose.sh hoowire:local` separately checks the documented
+Compose setup, explicit migration, CLI provisioning, private credential files,
+container recreation with persisted data and clean shutdown.
 
 The optional [logical restore test](docs/operations.md#automated-logical-restore-test)
 creates two fresh PostgreSQL containers, provisions its own synthetic accounts
